@@ -55,11 +55,23 @@ label{display:block;font-size:14px;color:var(--mute);margin:8px 0}
 select{width:100%;height:42px;font:inherit;margin-top:3px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:0 8px}
 .acts{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:15px;z-index:20;max-width:90vw}
+#home{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.homewrap{width:min(100%,420px)}
+.hometitle{font-size:32px;margin:0 0 4px;letter-spacing:.2px}
+.homesub{margin:0 0 22px;color:var(--mute)}
+.bigbtn{display:block;width:100%;text-align:left;border:0;border-radius:14px;background:var(--tag);color:var(--tagink);padding:22px 20px;font:inherit;cursor:pointer;position:relative}
+.bigbtn span{display:block;font-size:24px;font-weight:800}
+.bigbtn small{display:block;margin-top:6px;font-size:14px;font-weight:600;opacity:.8}
+.bigbtn::after{content:"›";position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:34px;font-weight:700}
+.bigbtn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 </style>
 </head>
 <body>
+<section id="home"><div class="homewrap"><h1 class="hometitle">Spares Finder</h1><p class="homesub">Choose an inventory</p><button class="bigbtn" id="openInv"><span>Instrument Inventory</span><small id="homeStat">No data yet. Connect to the internet once.</small></button></div></section>
+<main id="inv" hidden>
 <header>
-  <h1 id="title">Spares Finder</h1>
+  <button class="btn" id="back" aria-label="Back to home">‹ Home</button>
+  <h1 id="title">Instrument Inventory</h1>
   <button class="btn" id="expBtn" hidden>Export for publishing</button>
   <button class="btn main" id="updBtn" hidden>Update data</button>
 </header>
@@ -67,6 +79,7 @@ select{width:100%;height:42px;font:inherit;margin-top:3px;background:var(--bg);c
 <div class="bar"><input id="q" type="search" placeholder="Material code or description" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search material code or description"></div>
 <div id="count"></div>
 <ul id="list"></ul>
+</main>
 <div id="toast" hidden></div>
 
 <dialog id="imp">
@@ -124,6 +137,7 @@ function setDB(d){
   DB=d;const m=d.map;
   IDX=d.rows.map((r,i)=>{const code=(r[m.code]||'').trim();const desc=m.desc>=0?(r[m.desc]||''):'';return{i,c:code.toLowerCase(),h:(code+' '+desc).toLowerCase(),s:0}});
   $('#statTxt').textContent='Works offline · '+d.rows.length.toLocaleString()+' items · updated '+new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+  $('#homeStat').textContent=$('#statTxt').textContent.replace('Works offline · ','');
 }
 function run(){
   const q=$('#q').value.trim().toLowerCase(),t=q.split(/\s+/).filter(Boolean);
@@ -209,6 +223,12 @@ async function sync(){
 addEventListener('online',sync);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* ---------- home screen / navigation ---------- */
+function view(){const on=location.hash==='#inv';$('#inv').hidden=!on;$('#home').hidden=on;window.scrollTo(0,0)}
+$('#openInv').onclick=()=>{location.hash='inv'};
+$('#back').onclick=()=>{history.length>1?history.back():(location.hash='')};
+addEventListener('hashchange',view);view();
 
 /* ---------- start ---------- */
 (async()=>{const st=await kvGet('data');if(st)setDB(st);run();sync()})();
