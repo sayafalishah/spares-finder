@@ -64,19 +64,44 @@ select{width:100%;height:42px;font:inherit;margin-top:3px;background:var(--bg);c
 .bigbtn small{display:block;margin-top:6px;font-size:14px;font-weight:600;opacity:.8}
 .bigbtn::after{content:"›";position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:34px;font-weight:700}
 .bigbtn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.logo{width:92px;height:92px;border-radius:18px;margin-bottom:16px;box-shadow:0 4px 14px #0003;background:#fff}
+.item{box-shadow:0 1px 2px #0002,0 6px 18px #0000000d;animation:rise .25s ease}
+.code{border:0;font-family:inherit;cursor:pointer;text-align:left}
+.row2{display:flex;align-items:center;gap:10px;margin-top:9px;flex-wrap:wrap}
+.bdg{font-size:12px;font-weight:700;padding:2px 10px;border-radius:99px;letter-spacing:.3px}
+.bdg.ok{background:#1B6B4724;color:var(--ok)}.bdg.bad{background:#B3261E24;color:var(--bad)}.bdg.blk{background:var(--line);color:var(--mute)}
+.mut{font-size:13px;color:var(--mute)}
+.locs{margin-top:6px;border-top:1px solid var(--line)}
+.lrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.ls{font-size:14px;color:var(--mute)}.ls b{color:var(--ink)}
+.bin{font:inherit;font-size:14px;font-weight:600;background:transparent;color:var(--ink);border:1px solid var(--ink);border-radius:6px;padding:3px 10px;min-height:34px;cursor:pointer}
+.nb{font-size:14px;color:var(--mute)}
+.lq{margin-left:auto;font-weight:800;font-size:18px;font-variant-numeric:tabular-nums}.lq.z{color:var(--bad)}
+.mini{font:inherit;font-size:14px;font-weight:600;min-height:36px;padding:0 14px;margin-top:10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer}
+dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.chips{display:flex;gap:8px;margin-top:9px}
+.chips button{font:inherit;font-size:14px;font-weight:600;min-height:36px;padding:0 15px;border-radius:99px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.chips button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+#stale{margin:2px 12px 6px;padding:8px 12px;font-size:13px;border-left:4px solid var(--tag);background:#FFC20E26;border-radius:6px}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+#inv,#home{animation:rise .25s ease}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
 <body>
-<section id="home"><div class="homewrap"><h1 class="hometitle">Spares Finder</h1><p class="homesub">Choose an inventory</p><button class="bigbtn" id="openInv"><span>Instrument Inventory</span><small id="homeStat">No data yet. Connect to the internet once.</small></button></div></section>
+<section id="home"><div class="homewrap"><img class="logo" src="icon-192.png" alt=""><h1 class="hometitle">Spares Finder</h1><p class="homesub">Choose an inventory</p><button class="bigbtn" id="openInv"><span>Instrument Inventory</span><small id="homeStat">No data yet. Connect to the internet once.</small></button></div></section>
 <main id="inv" hidden>
 <header>
   <button class="btn" id="back" aria-label="Back to home">‹ Home</button>
   <h1 id="title">Instrument Inventory</h1>
+  <button class="btn" id="zoomBtn" aria-label="Text size">Aa</button>
   <button class="btn" id="expBtn" hidden>Export for publishing</button>
   <button class="btn main" id="updBtn" hidden>Update data</button>
 </header>
 <div id="stat"><i></i><span id="statTxt">Works offline · no data loaded yet</span></div>
-<div class="bar"><input id="q" type="search" placeholder="Material code or description" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search material code or description"></div>
+<div id="stale" hidden></div>
+<div class="bar"><input id="q" type="search" placeholder="Material code or description" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search material code or description">
+  <div class="chips" id="chips"><button data-f="all" class="on">All</button><button data-f="in">In stock</button><button data-f="out">Out of stock</button></div></div>
 <div id="count"></div>
 <ul id="list"></ul>
 </main>
@@ -133,22 +158,53 @@ const PAT={code:/material|mat\.?\s?(no|code)|item|part\s?(no|code)|^code$/i,desc
 function guess(h){const m={};const bi=h.findIndex(x=>/bin|rack|shelf/i.test(x));for(const k in PAT){if(k==='loc'&&bi>=0){m[k]=bi;continue}m[k]=h.findIndex((x,j)=>PAT[k].test(x)&&!(k==='code'&&/descr|text/i.test(x))&&!Object.values(m).includes(j))}return m}
 
 /* ---------- search ---------- */
+let FILTER='all';
+const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n};
+const qfmt=n=>n.toLocaleString(undefined,{maximumFractionDigits:3});
 function setDB(d){
-  DB=d;const m=d.map;
-  IDX=d.rows.map((r,i)=>{const code=(r[m.code]||'').trim();const desc=m.desc>=0?(r[m.desc]||''):'';return{i,c:code.toLowerCase(),h:(code+' '+desc).toLowerCase(),s:0}});
-  $('#statTxt').textContent='Works offline · '+d.rows.length.toLocaleString()+' items · updated '+new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
-  $('#homeStat').textContent=$('#statTxt').textContent.replace('Works offline · ','');
+  DB=d;const m=d.map,g=new Map();
+  d.rows.forEach((r,i)=>{const code=(r[m.code]||'').trim()||('row-'+i);let x=g.get(code);if(!x){x={code,rows:[],desc:''};g.set(code,x)}x.rows.push(i);if(!x.desc&&m.desc>=0)x.desc=r[m.desc]||''});
+  const gi=d.headers.indexOf('External Group');
+  IDX=[...g.values()].map(x=>{
+    x.qty=x.rows.reduce((a,i)=>a+(m.qty>=0?num(d.rows[i][m.qty]):0),0);
+    x.c=x.code.toLowerCase();x.h=(x.code+' '+x.desc).toLowerCase();
+    x.b=x.rows.map(i=>(m.loc>=0?d.rows[i][m.loc]||'':'')+' '+(gi>=0?d.rows[i][gi]||'':'')).join(' ').toLowerCase();
+    x.blk=/blocked/i.test(x.desc);x.s=0;return x});
+  const when=new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+  $('#statTxt').textContent='Works offline · '+IDX.length.toLocaleString()+' materials · updated '+when;
+  $('#homeStat').textContent=IDX.length.toLocaleString()+' materials · updated '+when;
+  const st=$('#stale');st.hidden=Date.now()-d.ts<7*864e5;st.textContent='Stock shown as of '+when+'. Check SAP for current figures.';
 }
 function run(){
   const q=$('#q').value.trim().toLowerCase(),t=q.split(/\s+/).filter(Boolean);
   if(!DB){results=[];render(t);return}
-  if(!t.length){results=IDX}
-  else{
-    results=[];
-    for(const x of IDX){if(t.every(w=>x.h.includes(w))){x.s=x.c===q?0:x.c.startsWith(q)?1:x.c.includes(q)?2:3;results.push(x)}}
-    results.sort((a,b)=>a.s-b.s);
+  const r=[];
+  for(const x of IDX){
+    if(FILTER==='in'&&!(x.qty>0))continue;
+    if(FILTER==='out'&&x.qty>0)continue;
+    if(t.length){
+      const hb=x.h+' '+x.b;
+      if(!t.every(w=>hb.includes(w)))continue;
+      x.s=t.every(w=>x.h.includes(w))?(x.c===q?0:x.c.startsWith(q)?1:x.c.includes(q)?2:3):4;
+    }
+    r.push(x);
   }
-  shown=60;render(t);
+  if(t.length)r.sort((a,b)=>a.s-b.s);
+  results=r;shown=40;render(t);
+}
+function card(x,t){
+  const m=DB.map,H=DB.headers,R=x.rows.map(i=>DB.rows[i]),unit=m.unit>=0?(R[0][m.unit]||''):'';
+  const badge=x.blk?'<span class="bdg blk">Blocked</span>':x.qty>0?'<span class="bdg ok">In stock</span>':'<span class="bdg bad">Out of stock</span>';
+  const locs=R.map(r=>{const q=m.qty>=0?num(r[m.qty]):0,bn=m.loc>=0?r[m.loc]||'':'';
+    return '<div class="lrow">'+(m.sloc>=0&&r[m.sloc]?'<span class="ls">Store <b>'+esc(r[m.sloc])+'</b></span>':'')
+      +(bn?'<button class="bin" data-bin="'+esc(bn)+'">Bin '+esc(bn)+'</button>':'<span class="nb">No bin</span>')
+      +'<span class="lq'+(q<=0?' z':'')+'">'+qfmt(q)+'</span></div>'}).join('');
+  const all=R.map(r=>'<dl>'+r.map((v,k)=>v?'<dt>'+esc(H[k])+'</dt><dd>'+esc(v)+'</dd>':'').join('')+'</dl>').join('');
+  return '<li class="item"><div class="row1"><button class="code" data-copy="'+esc(x.code)+'" title="Tap to copy">'+hl(x.code,t)+'</button><span class="qty'+(x.qty<=0?' zero':'')+'">'+qfmt(x.qty)+(unit?'<small>'+esc(unit)+'</small>':'')+'</span></div>'
+    +'<div class="row2">'+badge+(R.length>1?'<span class="mut">Total of '+R.length+' locations</span>':'')+'</div>'
+    +(x.desc?'<p class="desc">'+hl(x.desc,t)+'</p>':'')
+    +'<div class="locs">'+locs+'</div><button class="mini" data-share="'+esc(x.code)+'">Share</button>'
+    +'<details><summary>All fields</summary>'+all+'</details></li>';
 }
 function render(t){
   const ul=$('#list'),cnt=$('#count');
@@ -157,23 +213,31 @@ function render(t){
     ul.innerHTML='<div class="empty"><h2>No spares list yet</h2>Connect to the internet once and the list downloads automatically. After that it works offline.</div>';
     return;
   }
-  const total=DB.rows.length;
-  cnt.textContent=t.length?results.length.toLocaleString()+' of '+total.toLocaleString()+' items':total.toLocaleString()+' items';
-  if(!results.length){ul.innerHTML='<div class="empty"><h2>No match</h2>Try fewer words, or only part of the code.</div>';return}
-  const m=DB.map,H=DB.headers;
-  ul.innerHTML=results.slice(0,shown).map(x=>{
-    const r=DB.rows[x.i],raw=m.qty>=0?r[m.qty]||'':'',n=parseFloat(String(raw).replace(/,/g,''));
-    const q=isNaN(n)?esc(raw||'—'):n.toLocaleString(),zero=!isNaN(n)&&n<=0;
-    const unit=m.unit>=0&&r[m.unit]?'<small>'+esc(r[m.unit])+'</small>':'';
-    const ex=r.map((v,k)=>v?'<dt>'+esc(H[k])+'</dt><dd>'+esc(v)+'</dd>':'').join('');
-    return '<li class="item"><div class="row1"><span class="code">'+hl(r[m.code]||'',t)+'</span><span class="qty'+(zero?' zero':'')+'">'+q+unit+'</span></div>'
-      +(m.desc>=0?'<p class="desc">'+hl(r[m.desc]||'',t)+'</p>':'')
-      +((m.loc>=0||m.sloc>=0)?'<p class="loc">'+(m.sloc>=0&&r[m.sloc]?'<span>Storage location <b>'+esc(r[m.sloc])+'</b></span>':'')+(m.loc>=0?'<span>Bin <b>'+esc(r[m.loc]||'—')+'</b></span>':'')+'</p>':'')
-      +'<details><summary>All fields</summary><dl>'+ex+'</dl></details></li>';
-  }).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'');
-  const mb=$('#more');if(mb)mb.onclick=()=>{shown+=60;render(t)};
+  cnt.textContent=(t.length||FILTER!=='all')?results.length.toLocaleString()+' of '+IDX.length.toLocaleString()+' materials':IDX.length.toLocaleString()+' materials';
+  if(!results.length){ul.innerHTML='<div class="empty"><h2>No match</h2>Try fewer words, part of the code, or a different filter.</div>';return}
+  ul.innerHTML=results.slice(0,shown).map(x=>card(x,t)).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'');
+  const mb=$('#more');if(mb)mb.onclick=()=>{shown+=40;render(t)};
 }
+async function copy(t,msg){
+  try{await navigator.clipboard.writeText(t)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(_){}a.remove()}
+  toast(msg||'Copied '+t);
+}
+function shareItem(code){
+  const x=IDX.find(y=>y.code===code);if(!x)return;const m=DB.map;
+  const text=[x.code,x.desc,...x.rows.map(i=>{const r=DB.rows[i];return(m.sloc>=0&&r[m.sloc]?'Store '+r[m.sloc]+', ':'')+'Bin '+((m.loc>=0&&r[m.loc])||'-')+': '+qfmt(num(m.qty>=0?r[m.qty]:0))})].join('\n');
+  if(navigator.share)navigator.share({text}).catch(()=>{});else copy(text,'Item details copied');
+}
+$('#list').addEventListener('click',e=>{
+  const c=e.target.closest('[data-copy]');if(c){copy(c.dataset.copy);return}
+  const b=e.target.closest('[data-bin]');if(b){$('#q').value=b.dataset.bin;run();window.scrollTo(0,0);return}
+  const sh=e.target.closest('[data-share]');if(sh)shareItem(sh.dataset.share);
+});
+$('#chips').onclick=e=>{const b=e.target.closest('button');if(!b)return;FILTER=b.dataset.f;[...$('#chips').children].forEach(c=>c.classList.toggle('on',c===b));run()};
 $('#q').addEventListener('input',()=>{clearTimeout(run.t);run.t=setTimeout(run,100)});
+let Z=1;try{Z=+localStorage.getItem('z')||1}catch(e){}
+function zoom(){$('#list').style.zoom=Z}
+$('#zoomBtn').onclick=()=>{Z=Z===1?1.15:Z===1.15?1.3:1;zoom();try{localStorage.setItem('z',Z)}catch(e){}toast(Z===1?'Normal text':Z===1.15?'Larger text':'Largest text')};
+zoom();
 
 /* ---------- update data ---------- */
 function openImp(){$('#s1').hidden=false;$('#s2').hidden=true;$('#file').value='';$('#paste').value='';$('#imp').showModal()}
