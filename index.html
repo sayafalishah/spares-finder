@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14222B">
+<title>Spares Finder</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#E3E7E9;--card:#F8F9F9;--ink:#14222B;--mute:#566670;--line:#C5CDD2;--tag:#FFC20E;--tagink:#14222B;--bad:#B3261E;--ok:#1B6B47;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#10171B;--card:#1A2429;--ink:#E7ECEF;--mute:#8FA0AA;--line:#2C3A42;--bad:#FF8A80;--ok:#66D19E}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.4 "Bahnschrift","Roboto","Segoe UI","Helvetica Neue",Arial,sans-serif;padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);min-height:100vh}
+header{display:flex;align-items:center;gap:10px;padding:14px 14px 4px}
+header h1{font-size:21px;margin:0;letter-spacing:.2px;flex:1}
+#stat{font-size:13px;color:var(--mute);padding:0 14px 6px;display:flex;align-items:center;gap:7px}
+#stat i{width:9px;height:9px;border-radius:50%;background:var(--ok);display:inline-block}
+.bar{position:sticky;top:0;background:var(--bg);padding:8px 12px 10px;z-index:5}
+#q{width:100%;height:54px;font:inherit;font-size:19px;padding:0 16px;border:2px solid var(--ink);border-radius:10px;background:var(--card);color:var(--ink)}
+#q:focus-visible,.btn:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--tag);outline-offset:2px}
+.btn{font:inherit;font-weight:600;font-size:15px;min-height:42px;padding:0 14px;border-radius:9px;border:2px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
+.btn.main{background:var(--tag);border-color:var(--tag);color:var(--tagink)}
+.btn:disabled{opacity:.4}
+#count{font-size:13px;color:var(--mute);padding:0 16px 4px}
+ul{list-style:none;margin:0;padding:0 0 40px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:8px 12px;padding:12px 14px}
+.row1{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.code{background:var(--tag);color:var(--tagink);font-weight:800;font-size:17px;padding:3px 9px;border-radius:4px;font-variant-numeric:tabular-nums;word-break:break-all}
+.qty{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.qty small{font-size:13px;font-weight:600;color:var(--mute);margin-left:4px}
+.qty.zero{color:var(--bad)}
+.desc{margin:9px 0 6px;font-size:17px}
+.loc{margin:0;font-size:15px;color:var(--mute)}
+.loc span{margin-right:16px;white-space:nowrap}
+.loc b{color:var(--ink);font-size:17px}
+mark{background:#FFC20E66;color:inherit;border-radius:2px}
+details{margin-top:8px;border-top:1px solid var(--line);padding-top:6px}
+summary{font-size:14px;color:var(--mute);cursor:pointer;min-height:30px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:6px 0 0;font-size:14px}
+dt{color:var(--mute)}dd{margin:0;word-break:break-word}
+.empty{margin:24px 16px;padding:18px;border:2px dashed var(--line);border-radius:10px;color:var(--mute)}
+.empty h2{margin:0 0 8px;color:var(--ink);font-size:18px}
+.empty ol{padding-left:20px;margin:8px 0 0}
+.empty li{margin:5px 0}
+.more{display:block;margin:6px auto 0}
+dialog{border:0;border-radius:14px;background:var(--card);color:var(--ink);width:min(92vw,520px);padding:18px}
+dialog::backdrop{background:#000A}
+dialog h2{margin:0 0 10px;font-size:19px}
+dialog p{margin:6px 0;color:var(--mute);font-size:14px}
+textarea{width:100%;min-height:80px;font:inherit;font-size:14px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+label{display:block;font-size:14px;color:var(--mute);margin:8px 0}
+select{width:100%;height:42px;font:inherit;margin-top:3px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:0 8px}
+.acts{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:15px;z-index:20;max-width:90vw}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Spares Finder</h1>
+  <button class="btn" id="expBtn" hidden>Export for publishing</button>
+  <button class="btn main" id="updBtn" hidden>Update data</button>
+</header>
+<div id="stat"><i></i><span id="statTxt">Works offline · no data loaded yet</span></div>
+<div class="bar"><input id="q" type="search" placeholder="Material code or description" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search material code or description"></div>
+<div id="count"></div>
+<ul id="list"></ul>
+<div id="toast" hidden></div>
+
+<dialog id="imp">
+  <h2>Update data</h2>
+  <div id="s1">
+    <p>Export the ZITEM_DIR list from SAP as a spreadsheet or tab-separated text file. If it is an Excel file, save it as CSV first.</p>
+    <label>Choose the exported file<input id="file" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values"></label>
+    <label>Or paste the rows, including the header line<textarea id="paste"></textarea></label>
+    <div class="acts"><button class="btn" id="c1">Cancel</button><button class="btn main" id="usePaste">Use pasted rows</button></div>
+  </div>
+  <div id="s2" hidden>
+    <p id="pv"></p>
+    <p>Tell the app which column is which.</p>
+    <div id="maps"></div>
+    <div class="acts"><button class="btn" id="c2">Back</button><button class="btn main" id="save">Save data</button></div>
+  </div>
+</dialog>
+
+<script>
+const $=s=>document.querySelector(s);
+let DB=null,IDX=[],results=[],shown=60,PEND=null,tt;
+
+/* ---------- storage (IndexedDB, with graceful fallback) ---------- */
+function idb(){return new Promise((res,rej)=>{try{const r=indexedDB.open('spares-finder',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})}
+async function kvGet(k){try{const d=await idb();return await new Promise((res,rej)=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}catch(e){return null}}
+async function kvSet(k,v){try{const d=await idb();await new Promise((res,rej)=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)});return true}catch(e){return false}}
+
+/* ---------- helpers ---------- */
+function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,3200)}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function hl(s,t){const e=esc(s);if(!t.length)return e;const re=new RegExp('('+t.map(w=>esc(w).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')','gi');return e.replace(re,'<mark>$1</mark>')}
+
+/* ---------- parsing SAP exports ---------- */
+function parseTable(text){
+  text=text.replace(/^\uFEFF/,'');
+  const first=text.split(/\r?\n/).find(l=>/\w/.test(l))||'';
+  let d=',',best=1;
+  for(const c of ['\t','|',';',',']){const n=first.split(c).length;if(n>best){best=n;d=c}}
+  const useQ=d!=='|',rows=[];let row=[],cell='',q=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(q){if(c==='"'){if(text[i+1]==='"'){cell+='"';i++}else q=false}else cell+=c}
+    else if(useQ&&c==='"'&&cell===''){q=true}
+    else if(c===d){row.push(cell);cell=''}
+    else if(c==='\n'){row.push(cell);rows.push(row);row=[];cell=''}
+    else if(c!=='\r')cell+=c}
+  if(cell!==''||row.length){row.push(cell);rows.push(row)}
+  return rows.map(r=>{r=r.map(x=>x.trim());if(d==='|'){if(r[0]==='')r.shift();if(r[r.length-1]==='')r.pop()}return r})
+    .filter(r=>r.some(x=>x)&&!/^[-+=\s|]+$/.test(r.join('')));
+}
+const PAT={code:/material|mat\.?\s?(no|code)|item|part\s?(no|code)|^code$/i,desc:/descr|text|name/i,loc:/bin|locat|storage|rack|shelf/i,qty:/qty|quant|stock|unrestricted|avail/i,unit:/^unit|uom|\bbun\b|unit$/i,sloc:/storage|sloc/i};
+function guess(h){const m={};const bi=h.findIndex(x=>/bin|rack|shelf/i.test(x));for(const k in PAT){if(k==='loc'&&bi>=0){m[k]=bi;continue}m[k]=h.findIndex((x,j)=>PAT[k].test(x)&&!(k==='code'&&/descr|text/i.test(x))&&!Object.values(m).includes(j))}return m}
+
+/* ---------- search ---------- */
+function setDB(d){
+  DB=d;const m=d.map;
+  IDX=d.rows.map((r,i)=>{const code=(r[m.code]||'').trim();const desc=m.desc>=0?(r[m.desc]||''):'';return{i,c:code.toLowerCase(),h:(code+' '+desc).toLowerCase(),s:0}});
+  $('#statTxt').textContent='Works offline · '+d.rows.length.toLocaleString()+' items · updated '+new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+}
+function run(){
+  const q=$('#q').value.trim().toLowerCase(),t=q.split(/\s+/).filter(Boolean);
+  if(!DB){results=[];render(t);return}
+  if(!t.length){results=IDX}
+  else{
+    results=[];
+    for(const x of IDX){if(t.every(w=>x.h.includes(w))){x.s=x.c===q?0:x.c.startsWith(q)?1:x.c.includes(q)?2:3;results.push(x)}}
+    results.sort((a,b)=>a.s-b.s);
+  }
+  shown=60;render(t);
+}
+function render(t){
+  const ul=$('#list'),cnt=$('#count');
+  if(!DB){
+    cnt.textContent='';
+    ul.innerHTML='<div class="empty"><h2>No spares list yet</h2>Connect to the internet once and the list downloads automatically. After that it works offline.</div>';
+    return;
+  }
+  const total=DB.rows.length;
+  cnt.textContent=t.length?results.length.toLocaleString()+' of '+total.toLocaleString()+' items':total.toLocaleString()+' items';
+  if(!results.length){ul.innerHTML='<div class="empty"><h2>No match</h2>Try fewer words, or only part of the code.</div>';return}
+  const m=DB.map,H=DB.headers;
+  ul.innerHTML=results.slice(0,shown).map(x=>{
+    const r=DB.rows[x.i],raw=m.qty>=0?r[m.qty]||'':'',n=parseFloat(String(raw).replace(/,/g,''));
+    const q=isNaN(n)?esc(raw||'—'):n.toLocaleString(),zero=!isNaN(n)&&n<=0;
+    const unit=m.unit>=0&&r[m.unit]?'<small>'+esc(r[m.unit])+'</small>':'';
+    const ex=r.map((v,k)=>v?'<dt>'+esc(H[k])+'</dt><dd>'+esc(v)+'</dd>':'').join('');
+    return '<li class="item"><div class="row1"><span class="code">'+hl(r[m.code]||'',t)+'</span><span class="qty'+(zero?' zero':'')+'">'+q+unit+'</span></div>'
+      +(m.desc>=0?'<p class="desc">'+hl(r[m.desc]||'',t)+'</p>':'')
+      +((m.loc>=0||m.sloc>=0)?'<p class="loc">'+(m.sloc>=0&&r[m.sloc]?'<span>Storage location <b>'+esc(r[m.sloc])+'</b></span>':'')+(m.loc>=0?'<span>Bin <b>'+esc(r[m.loc]||'—')+'</b></span>':'')+'</p>':'')
+      +'<details><summary>All fields</summary><dl>'+ex+'</dl></details></li>';
+  }).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'');
+  const mb=$('#more');if(mb)mb.onclick=()=>{shown+=60;render(t)};
+}
+$('#q').addEventListener('input',()=>{clearTimeout(run.t);run.t=setTimeout(run,100)});
+
+/* ---------- update data ---------- */
+function openImp(){$('#s1').hidden=false;$('#s2').hidden=true;$('#file').value='';$('#paste').value='';$('#imp').showModal()}
+$('#updBtn').onclick=openImp;
+$('#c1').onclick=()=>$('#imp').close();
+$('#c2').onclick=()=>{$('#s1').hidden=false;$('#s2').hidden=true};
+function openMap(rows,name){
+  const h=rows[0].map((x,i)=>x||('Column '+(i+1)));
+  PEND={headers:h,rows:rows.slice(1),name};
+  const g=guess(h),lab={code:'Material code',desc:'Description',loc:'Bin or rack',sloc:'Storage location',qty:'Quantity',unit:'Unit'};
+  $('#maps').innerHTML=Object.keys(lab).map(k=>'<label>'+lab[k]+'<select data-k="'+k+'"><option value="-1">None</option>'+h.map((x,i)=>'<option value="'+i+'"'+(g[k]===i?' selected':'')+'>'+esc(x)+'</option>').join('')+'</select></label>').join('');
+  $('#pv').textContent=PEND.rows.length.toLocaleString()+' rows found.';
+  $('#s1').hidden=true;$('#s2').hidden=false;
+}
+async function readText(f){const b=await f.arrayBuffer();try{return new TextDecoder('utf-8',{fatal:true}).decode(b)}catch(e){return new TextDecoder('windows-1252').decode(b)}}
+$('#file').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(/\.xlsx?$/i.test(f.name)){toast('Save the Excel file as CSV, then choose it');return}
+  const rows=parseTable(await readText(f));
+  if(rows.length<2){toast('No rows found in that file');return}
+  openMap(rows,f.name);
+};
+$('#usePaste').onclick=()=>{
+  const rows=parseTable($('#paste').value);
+  if(rows.length<2){toast('Paste the header line and at least one row');return}
+  openMap(rows,'Pasted rows');
+};
+$('#save').onclick=async()=>{
+  const map={};document.querySelectorAll('#maps select').forEach(s=>map[s.dataset.k]=+s.value);
+  if(map.code<0){toast('Choose the Material code column');return}
+  const d={headers:PEND.headers,rows:PEND.rows,map,ts:Date.now(),name:PEND.name};
+  setDB(d);$('#q').value='';run();$('#imp').close();
+  toast((await kvSet('data',d))?'Data saved on this phone':'Data loaded, but this browser could not save it');
+};
+
+/* ---------- admin tools: tap the title 5 times ---------- */
+let taps=0,tapT;
+function admin(on){$('#updBtn').hidden=!on;$('#expBtn').hidden=!on;try{localStorage.setItem('adm',on?'1':'')}catch(e){}}
+$('#title').onclick=()=>{taps++;clearTimeout(tapT);tapT=setTimeout(()=>taps=0,1500);if(taps>=5){taps=0;const on=$('#updBtn').hidden;admin(on);toast(on?'Admin tools on':'Admin tools off')}};
+try{if(localStorage.getItem('adm'))admin(true)}catch(e){}
+
+/* ---------- admin: export data.json for publishing ---------- */
+$('#expBtn').onclick=()=>{
+  if(!DB){toast('Update data first');return}
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(DB)],{type:'application/json'}));
+  a.download='data.json';a.click();
+  toast('data.json saved. Upload it to replace the old one');
+};
+
+/* ---------- automatic sync for every user ---------- */
+async function sync(){
+  if(!navigator.onLine)return;
+  try{
+    const r=await fetch('data.json?v='+Date.now(),{cache:'no-store'});
+    if(!r.ok)return;
+    const d=await r.json();
+    if(!d||!d.map||!d.rows||!d.rows.length)return;
+    if(!DB||d.ts>DB.ts){setDB(d);await kvSet('data',d);run();toast('Spares list updated')}
+  }catch(e){}
+}
+addEventListener('online',sync);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* ---------- start ---------- */
+(async()=>{const st=await kvGet('data');if(st)setDB(st);run();sync()})();
+</script>
+</body>
+</html>
