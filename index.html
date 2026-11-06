@@ -195,21 +195,6 @@ $('#save').onclick=async()=>{
   toast((await kvSet('data',d))?'Data saved on this phone':'Data loaded, but this browser could not save it');
 };
 
-/* ---------- admin tools: tap the title 5 times ---------- */
-let taps=0,tapT;
-function admin(on){$('#updBtn').hidden=!on;$('#expBtn').hidden=!on;try{localStorage.setItem('adm',on?'1':'')}catch(e){}}
-$('#title').onclick=()=>{taps++;clearTimeout(tapT);tapT=setTimeout(()=>taps=0,1500);if(taps>=5){taps=0;const on=$('#updBtn').hidden;admin(on);toast(on?'Admin tools on':'Admin tools off')}};
-try{if(localStorage.getItem('adm'))admin(true)}catch(e){}
-
-/* ---------- admin: export data.json for publishing ---------- */
-$('#expBtn').onclick=()=>{
-  if(!DB){toast('Update data first');return}
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(DB)],{type:'application/json'}));
-  a.download='data.json';a.click();
-  toast('data.json saved. Upload it to replace the old one');
-};
-
 /* ---------- automatic sync for every user ---------- */
 async function sync(){
   if(!navigator.onLine)return;
@@ -218,7 +203,7 @@ async function sync(){
     if(!r.ok)return;
     const d=await r.json();
     if(!d||!d.map||!d.rows||!d.rows.length)return;
-    if(!DB||d.ts>DB.ts){setDB(d);await kvSet('data',d);run();toast('Spares list updated')}
+    if(!DB||d.ts!==DB.ts){setDB(d);await kvSet('data',d);run();toast('Spares list updated')}
   }catch(e){}
 }
 addEventListener('online',sync);
