@@ -92,6 +92,44 @@ print('Wrote data.json:', len(rows), 'items from', path, m)
 # ---- documents: files in docs/ named CODE__type.ext, e.g. CC_INST_01010010__datasheet.pdf ----
 TYPES = {'photo', 'drawing', 'datasheet', 'manual'}
 EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf')
+
+# ---- pictures are shrunk automatically so phones store small files ----
+MAX_PX = {'drawing': 2000, 'datasheet': 2000}  # longest side in pixels, per type
+DEFAULT_PX = 1200                              # all other pictures (photos, nameplates)
+MAX_KB = 400                                   # shrink any picture larger than this
+DONE_FILE = os.path.join('docs', '_shrunk.json')
+done = json.load(open(DONE_FILE)) if os.path.exists(DONE_FILE) else {}
+
+
+def sha(path):
+    return hashlib.sha1(open(path, 'rb').read()).hexdigest()
+
+
+def shrink(path, typ):
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in ('.jpg', '.jpeg', '.png', '.webp'):
+        return
+    from PIL import Image, ImageOps
+    limit = MAX_PX.get(typ, DEFAULT_PX)
+    before = os.path.getsize(path)
+    with Image.open(path) as src:
+        src.load()
+        im = ImageOps.exif_transpose(src).copy()
+    w, h = im.size
+    if max(w, h) <= limit and before <= MAX_KB * 1024:
+        return
+    if max(w, h) > limit:
+        k = limit / max(w, h)
+        im = im.resize((round(w * k), round(h * k)), Image.LANCZOS)
+    if ext in ('.jpg', '.jpeg'):
+        im.convert('RGB').save(path, 'JPEG', quality=80, optimize=True, progressive=True)
+    elif ext == '.png':
+        im.save(path, 'PNG', optimize=True)
+    else:
+        im.save(path, 'WEBP', quality=80)
+    print('Shrunk', os.path.basename(path), round(before / 1024), 'KB ->', round(os.path.getsize(path) / 1024), 'KB')
+
+
 docs = {}
 if os.path.isdir('docs'):
     for fn in sorted(os.listdir('docs')):
@@ -101,8 +139,20 @@ if os.path.isdir('docs'):
         mt = re.match(r'^(.+?)__([A-Za-z]+)(?:[-_ ]?\d+)?$', base)
         code, typ = (mt.group(1), mt.group(2).lower()) if mt else (base, 'other')
         typ = typ if typ in TYPES else 'other'
+        p = os.path.join('docs', fn)
+        if ext.lower() == '.pdf':
+            if os.path.getsize(p) > 5 * 1024 * 1024:
+                print('WARNING: large PDF (', round(os.path.getsize(p) / 1048576, 1), 'MB ):', fn)
+        elif done.get(fn) != sha(p):
+            try:
+                shrink(p, typ)
+            except Exception as e:
+                print('Could not shrink', fn, '-', e)
+            done[fn] = sha(p)
         ver = hashlib.sha1(open(os.path.join('docs', fn), 'rb').read()).hexdigest()[:8]
         docs.setdefault(re.sub(r'\s+', '', code).upper(), []).append({'t': typ, 'f': 'docs/' + quote(fn) + '?v=' + ver})
+if os.path.isdir('docs'):
+    json.dump(done, open(DONE_FILE, 'w'), indent=0)
 v = hashlib.sha1(json.dumps(docs, sort_keys=True).encode()).hexdigest()[:12]
 with open('docs.json', 'w', encoding='utf-8') as f:
     json.dump({'v': v, 'files': docs}, f, separators=(',', ':'))
