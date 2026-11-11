@@ -86,6 +86,27 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 #inv,#home{animation:rise .25s ease}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px 12px 40px}
+.tile{font:inherit;text-align:left;background:var(--card);color:var(--ink);border:1px solid var(--line);border-top:4px solid var(--tag);border-radius:12px;padding:12px 12px 10px;min-height:112px;display:flex;flex-direction:column;box-shadow:0 1px 2px #0002,0 6px 18px #0000000d;cursor:pointer;animation:rise .25s ease}
+.tile b{font-size:15px;line-height:1.25}
+.tile .tn{font-size:30px;font-weight:800;margin-top:auto;font-variant-numeric:tabular-nums}
+.tile small{font-size:13px;color:var(--mute)}
+.tile.dim{border-top-color:var(--mute);opacity:.85}
+.tile:focus-visible{outline:3px solid var(--tag);outline-offset:2px}
+#crumb{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 14px 6px}
+#crumb b{font-size:18px}
+#crumb .btn{min-height:36px;font-size:14px}
+.docs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.dchip{font:inherit;font-size:14px;font-weight:700;min-height:36px;padding:0 14px;border-radius:99px;border:2px solid var(--tag);background:#FFC20E22;color:var(--ink);cursor:pointer}
+.chips{flex-wrap:wrap}
+#docbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 14px 6px;font-size:13px;color:var(--mute)}
+#docbar .btn{min-height:34px;font-size:13px;padding:0 12px}
+#viewer{position:fixed;inset:0;background:#000;z-index:30;display:flex;flex-direction:column}
+#viewer[hidden]{display:none}
+.vbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(10px + env(safe-area-inset-top,0)) 14px 10px;color:#fff}
+.vbar .btn{color:#fff;border-color:#fff}
+.vbody{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center}
+.vbody img{max-width:100%;height:auto;display:block}
 </style>
 </head>
 <body>
@@ -100,11 +121,14 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 </header>
 <div id="stat"><i></i><span id="statTxt">Works offline · no data loaded yet</span></div>
 <div id="stale" hidden></div>
+<div id="docbar" hidden><span id="docInfo"></span><button class="btn" id="saveDocs">Save for offline</button></div>
 <div class="bar"><input id="q" type="search" placeholder="Material code or description" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search material code or description">
-  <div class="chips" id="chips"><button data-f="all" class="on">All</button><button data-f="in">In stock</button><button data-f="out">Out of stock</button></div></div>
+  <div class="chips" id="chips"><button data-f="all" class="on">All</button><button data-f="in">In stock</button><button data-f="out">Out of stock</button><button data-f="docs">With documents</button></div></div>
+<div id="crumb" hidden><b id="catName"></b><button class="btn" id="allCats">All categories</button></div>
 <div id="count"></div>
 <ul id="list"></ul>
 </main>
+<div id="viewer" hidden><div class="vbar"><b id="vcap"></b><button class="btn" id="vclose">Close</button></div><div class="vbody"><img id="vimg" alt=""></div></div>
 <div id="toast" hidden></div>
 
 <dialog id="imp">
@@ -158,7 +182,12 @@ const PAT={code:/material|mat\.?\s?(no|code)|item|part\s?(no|code)|^code$/i,desc
 function guess(h){const m={};const bi=h.findIndex(x=>/bin|rack|shelf/i.test(x));for(const k in PAT){if(k==='loc'&&bi>=0){m[k]=bi;continue}m[k]=h.findIndex((x,j)=>PAT[k].test(x)&&!(k==='code'&&/descr|text/i.test(x))&&!Object.values(m).includes(j))}return m}
 
 /* ---------- search ---------- */
-let FILTER='all';
+let FILTER='all',CAT=null,HASCAT=false,DOCS={files:{}};
+const dk=c=>String(c).replace(/\s+/g,'').toUpperCase();
+const docsFor=x=>DOCS.files[dk(x.code)]||[];
+const pass=x=>FILTER==='in'?x.qty>0:FILTER==='out'?!(x.qty>0):FILTER==='docs'?docsFor(x).length>0:true;
+const DL={photo:'Photo',drawing:'Drawing',datasheet:'Datasheet',manual:'Manual',other:'Document'};
+const rank=k=>k==='Blocked / Inactive'?2:k==='Other'?1:0;
 const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n};
 const qfmt=n=>n.toLocaleString(undefined,{maximumFractionDigits:3});
 function setDB(d){
@@ -169,7 +198,8 @@ function setDB(d){
     x.qty=x.rows.reduce((a,i)=>a+(m.qty>=0?num(d.rows[i][m.qty]):0),0);
     x.c=x.code.toLowerCase();x.h=(x.code+' '+x.desc).toLowerCase();
     x.b=x.rows.map(i=>(m.loc>=0?d.rows[i][m.loc]||'':'')+' '+(gi>=0?d.rows[i][gi]||'':'')).join(' ').toLowerCase();
-    x.blk=/blocked/i.test(x.desc);x.s=0;return x});
+    x.blk=/blocked/i.test(x.desc);x.cat=m.cat>=0?(d.rows[x.rows[0]][m.cat]||'Other'):'';x.s=0;return x});
+  HASCAT=m.cat>=0;
   const when=new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
   $('#statTxt').textContent='Works offline · '+IDX.length.toLocaleString()+' materials · updated '+when;
   $('#homeStat').textContent=IDX.length.toLocaleString()+' materials · updated '+when;
@@ -178,10 +208,11 @@ function setDB(d){
 function run(){
   const q=$('#q').value.trim().toLowerCase(),t=q.split(/\s+/).filter(Boolean);
   if(!DB){results=[];render(t);return}
+  if(HASCAT&&CAT===null&&!t.length){renderCats();return}
   const r=[];
   for(const x of IDX){
-    if(FILTER==='in'&&!(x.qty>0))continue;
-    if(FILTER==='out'&&x.qty>0)continue;
+    if(CAT!==null&&x.cat!==CAT)continue;
+    if(!pass(x))continue;
     if(t.length){
       const hb=x.h+' '+x.b;
       if(!t.every(w=>hb.includes(w)))continue;
@@ -192,6 +223,34 @@ function run(){
   if(t.length)r.sort((a,b)=>a.s-b.s);
   results=r;shown=40;render(t);
 }
+function docChips(x){
+  const L=docsFor(x);if(!L.length)return '';const cnt={},seen={};L.forEach(d=>cnt[d.t]=(cnt[d.t]||0)+1);
+  return '<div class="docs">'+L.map((d,i)=>{seen[d.t]=(seen[d.t]||0)+1;return '<button class="dchip" data-dk="'+esc(dk(x.code))+'" data-di="'+i+'">'+(DL[d.t]||'Document')+(cnt[d.t]>1?' '+seen[d.t]:'')+'</button>'}).join('')+'</div>';
+}
+function openDoc(key,i){
+  const L=DOCS.files[key]||[],d=L[i];if(!d)return;
+  if(/\.(jpe?g|png|webp|gif)$/i.test(d.f)){
+    $('#vimg').src=d.f;$('#vcap').textContent=(DL[d.t]||'Document')+'  '+key;$('#viewer').hidden=false;history.pushState({v:1},'');
+  }else window.open(d.f,'_blank');
+}
+function closeViewer(){if(!$('#viewer').hidden){$('#viewer').hidden=true;$('#vimg').removeAttribute('src')}}
+$('#vclose').onclick=()=>history.back();
+addEventListener('popstate',closeViewer);
+function setDocs(d){
+  DOCS=d&&d.files?d:{files:{}};const n=Object.values(DOCS.files).reduce((a,l)=>a+l.length,0);
+  $('#docbar').hidden=!n;$('#docInfo').textContent=n.toLocaleString()+' documents available';
+}
+async function syncDocs(){
+  try{const r=await fetch('docs.json?v='+Date.now(),{cache:'no-store'});if(!r.ok)return;const d=await r.json();
+    if(d&&d.files&&d.v!==DOCS.v){setDocs(d);await kvSet('docs',d);run()}}catch(e){}
+}
+async function saveAll(){
+  const urls=Object.values(DOCS.files).flat().map(d=>d.f),b=$('#saveDocs');b.disabled=true;let n=0,bad=0;
+  for(const u of urls){try{const r=await fetch(u);if(!r.ok)bad++;else await r.arrayBuffer()}catch(e){bad++}
+    n++;if(n%5===0||n===urls.length)$('#docInfo').textContent='Saving '+n+' of '+urls.length}
+  $('#docInfo').textContent=bad?'Saved. '+bad+' could not be saved':'All documents saved for offline use';b.disabled=false;
+}
+$('#saveDocs').onclick=saveAll;
 function card(x,t){
   const m=DB.map,H=DB.headers,R=x.rows.map(i=>DB.rows[i]),unit=m.unit>=0?(R[0][m.unit]||''):'';
   const badge=x.blk?'<span class="bdg blk">Blocked</span>':x.qty>0?'<span class="bdg ok">In stock</span>':'<span class="bdg bad">Out of stock</span>';
@@ -203,17 +262,32 @@ function card(x,t){
   return '<li class="item"><div class="row1"><button class="code" data-copy="'+esc(x.code)+'" title="Tap to copy">'+hl(x.code,t)+'</button><span class="qty'+(x.qty<=0?' zero':'')+'">'+qfmt(x.qty)+(unit?'<small>'+esc(unit)+'</small>':'')+'</span></div>'
     +'<div class="row2">'+badge+(R.length>1?'<span class="mut">Total of '+R.length+' locations</span>':'')+'</div>'
     +(x.desc?'<p class="desc">'+hl(x.desc,t)+'</p>':'')
-    +'<div class="locs">'+locs+'</div><button class="mini" data-share="'+esc(x.code)+'">Share</button>'
+    +'<div class="locs">'+locs+'</div>'+docChips(x)+'<button class="mini"data-share="'+esc(x.code)+'">Share</button>'
     +'<details><summary>All fields</summary>'+all+'</details></li>';
 }
+function chrome(){
+  $('#crumb').hidden=CAT===null;$('#catName').textContent=CAT||'';
+  $('#back').textContent=CAT!==null?'‹ Back':'‹ Home';
+  $('#q').placeholder=CAT!==null?'Search in '+CAT:'Material code or description';
+}
+function renderCats(){
+  chrome();const c=new Map();
+  for(const x of IDX){if(!pass(x))continue;
+    let o=c.get(x.cat);if(!o){o={n:0,i:0};c.set(x.cat,o)}o.n++;if(x.qty>0)o.i++}
+  const list=[...c].sort((a,b)=>rank(a[0])-rank(b[0])||b[1].n-a[1].n);
+  $('#count').textContent=list.reduce((a,e)=>a+e[1].n,0).toLocaleString()+' materials in '+list.length+' categories';
+  $('#list').innerHTML=list.length?'<div class="tiles">'+list.map(([k,o])=>'<button class="tile'+(rank(k)===2?' dim':'')+'" data-cat="'+esc(k)+'"><b>'+esc(k)+'</b><span class="tn">'+o.n.toLocaleString()+'</span><small>'+o.i.toLocaleString()+' in stock</small></button>').join('')+'</div>':'<div class="empty"><h2>Nothing here</h2>No materials match this filter.</div>';
+}
 function render(t){
+  chrome();
   const ul=$('#list'),cnt=$('#count');
   if(!DB){
     cnt.textContent='';
     ul.innerHTML='<div class="empty"><h2>No spares list yet</h2>Connect to the internet once and the list downloads automatically. After that it works offline.</div>';
     return;
   }
-  cnt.textContent=(t.length||FILTER!=='all')?results.length.toLocaleString()+' of '+IDX.length.toLocaleString()+' materials':IDX.length.toLocaleString()+' materials';
+  const base=CAT!==null?IDX.reduce((a,x)=>a+(x.cat===CAT),0):IDX.length;
+  cnt.textContent=(t.length||FILTER!=='all')?results.length.toLocaleString()+' of '+base.toLocaleString()+' materials':base.toLocaleString()+' materials';
   if(!results.length){ul.innerHTML='<div class="empty"><h2>No match</h2>Try fewer words, part of the code, or a different filter.</div>';return}
   ul.innerHTML=results.slice(0,shown).map(x=>card(x,t)).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'');
   const mb=$('#more');if(mb)mb.onclick=()=>{shown+=40;render(t)};
@@ -228,8 +302,10 @@ function shareItem(code){
   if(navigator.share)navigator.share({text}).catch(()=>{});else copy(text,'Item details copied');
 }
 $('#list').addEventListener('click',e=>{
+  const dc=e.target.closest('[data-di]');if(dc){openDoc(dc.dataset.dk,+dc.dataset.di);return}
+  const ct=e.target.closest('[data-cat]');if(ct){CAT=ct.dataset.cat;$('#q').value='';location.hash='cat';run();window.scrollTo(0,0);return}
   const c=e.target.closest('[data-copy]');if(c){copy(c.dataset.copy);return}
-  const b=e.target.closest('[data-bin]');if(b){$('#q').value=b.dataset.bin;run();window.scrollTo(0,0);return}
+  const b=e.target.closest('[data-bin]');if(b){$('#q').value=b.dataset.bin;CAT=null;if(location.hash==='#cat')history.replaceState(null,'','#inv');run();window.scrollTo(0,0);return}
   const sh=e.target.closest('[data-share]');if(sh)shareItem(sh.dataset.share);
 });
 $('#chips').onclick=e=>{const b=e.target.closest('button');if(!b)return;FILTER=b.dataset.f;[...$('#chips').children].forEach(c=>c.classList.toggle('on',c===b));run()};
@@ -276,6 +352,7 @@ $('#save').onclick=async()=>{
 /* ---------- automatic sync for every user ---------- */
 async function sync(){
   if(!navigator.onLine)return;
+  syncDocs();
   try{
     const r=await fetch('data.json?v='+Date.now(),{cache:'no-store'});
     if(!r.ok)return;
@@ -289,13 +366,14 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 
 /* ---------- home screen / navigation ---------- */
-function view(){const on=location.hash==='#inv';$('#inv').hidden=!on;$('#home').hidden=on;window.scrollTo(0,0)}
+function view(){const h=location.hash,on=h==='#inv'||h==='#cat';$('#inv').hidden=!on;$('#home').hidden=on;if(h!=='#cat'&&CAT!==null){CAT=null;$('#q').value=''}if(on)run();window.scrollTo(0,0)}
 $('#openInv').onclick=()=>{location.hash='inv'};
+$('#allCats').onclick=()=>history.back();
 $('#back').onclick=()=>{history.length>1?history.back():(location.hash='')};
 addEventListener('hashchange',view);view();
 
 /* ---------- start ---------- */
-(async()=>{const st=await kvGet('data');if(st)setDB(st);run();sync()})();
+(async()=>{const dd=await kvGet('docs');if(dd)setDocs(dd);const st=await kvGet('data');if(st)setDB(st);run();sync()})();
 </script>
 </body>
 </html>

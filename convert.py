@@ -1,5 +1,6 @@
 """Builds data.json for Spares Finder from the SAP export (.xlsx or .csv) in this repository."""
-import csv, datetime, glob, io, json, os, re, subprocess, sys, time
+import csv, datetime, hashlib, io, json, os, re, subprocess, sys, time
+from urllib.parse import quote
 
 DROP = []  # columns to leave out of the app, e.g. ['Rate', 'Last PO No']
 
@@ -87,3 +88,21 @@ data = {'headers': [headers[i] for i in keep], 'rows': rows, 'map': m,
 with open('data.json', 'w', encoding='utf-8') as f:
     json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
 print('Wrote data.json:', len(rows), 'items from', path, m)
+
+# ---- documents: files in docs/ named CODE__type.ext, e.g. CC_INST_01010010__datasheet.pdf ----
+TYPES = {'photo', 'drawing', 'datasheet', 'manual'}
+EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf')
+docs = {}
+if os.path.isdir('docs'):
+    for fn in sorted(os.listdir('docs')):
+        base, ext = os.path.splitext(fn)
+        if ext.lower() not in EXTS:
+            continue
+        mt = re.match(r'^(.+?)__([A-Za-z]+)(?:[-_ ]?\d+)?$', base)
+        code, typ = (mt.group(1), mt.group(2).lower()) if mt else (base, 'other')
+        typ = typ if typ in TYPES else 'other'
+        docs.setdefault(re.sub(r'\s+', '', code).upper(), []).append({'t': typ, 'f': 'docs/' + quote(fn)})
+v = hashlib.sha1(json.dumps(docs, sort_keys=True).encode()).hexdigest()[:12]
+with open('docs.json', 'w', encoding='utf-8') as f:
+    json.dump({'v': v, 'files': docs}, f, separators=(',', ':'))
+print('Wrote docs.json:', sum(len(x) for x in docs.values()), 'documents for', len(docs), 'codes')
