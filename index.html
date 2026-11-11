@@ -229,7 +229,7 @@ function docChips(x){
 }
 function openDoc(key,i){
   const L=DOCS.files[key]||[],d=L[i];if(!d)return;
-  if(/\.(jpe?g|png|webp|gif)$/i.test(d.f)){
+  if(/\.(jpe?g|png|webp|gif)(\?|$)/i.test(d.f)){
     $('#vimg').src=d.f;$('#vcap').textContent=(DL[d.t]||'Document')+'  '+key;$('#viewer').hidden=false;history.pushState({v:1},'');
   }else window.open(d.f,'_blank');
 }
@@ -240,9 +240,14 @@ function setDocs(d){
   DOCS=d&&d.files?d:{files:{}};const n=Object.values(DOCS.files).reduce((a,l)=>a+l.length,0);
   $('#docbar').hidden=!n;$('#docInfo').textContent=n.toLocaleString()+' documents available';
 }
+async function pruneDocs(){
+  try{const keep=new Set(Object.values(DOCS.files).flat().map(d=>new URL(d.f,location.href).href));
+    const c=await caches.open('spares-v3');
+    for(const r of await c.keys()){if(new URL(r.url).pathname.includes('/docs/')&&!keep.has(r.url))await c.delete(r)}}catch(e){}
+}
 async function syncDocs(){
   try{const r=await fetch('docs.json?v='+Date.now(),{cache:'no-store'});if(!r.ok)return;const d=await r.json();
-    if(d&&d.files&&d.v!==DOCS.v){setDocs(d);await kvSet('docs',d);run()}}catch(e){}
+    if(d&&d.files&&d.v!==DOCS.v){setDocs(d);await kvSet('docs',d);run();pruneDocs()}}catch(e){}
 }
 async function saveAll(){
   const urls=Object.values(DOCS.files).flat().map(d=>d.f),b=$('#saveDocs');b.disabled=true;let n=0,bad=0;

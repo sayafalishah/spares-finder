@@ -7,7 +7,7 @@ self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
   if(e.request.method!=='GET'||u.origin!==location.origin||/\/(data|docs)\.json$/.test(u.pathname))return;
   if(u.pathname.includes('/docs/')){
-    e.respondWith(caches.match(e.request,{ignoreSearch:true}).then(hit=>hit||fetch(e.request).then(r=>keep(e.request,r))));
+    e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>keep(e.request,r))));
     return;
   }
   e.respondWith(caches.match(e.request,{ignoreSearch:true}).then(hit=>{

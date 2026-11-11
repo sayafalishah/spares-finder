@@ -101,7 +101,8 @@ if os.path.isdir('docs'):
         mt = re.match(r'^(.+?)__([A-Za-z]+)(?:[-_ ]?\d+)?$', base)
         code, typ = (mt.group(1), mt.group(2).lower()) if mt else (base, 'other')
         typ = typ if typ in TYPES else 'other'
-        docs.setdefault(re.sub(r'\s+', '', code).upper(), []).append({'t': typ, 'f': 'docs/' + quote(fn)})
+        ver = hashlib.sha1(open(os.path.join('docs', fn), 'rb').read()).hexdigest()[:8]
+        docs.setdefault(re.sub(r'\s+', '', code).upper(), []).append({'t': typ, 'f': 'docs/' + quote(fn) + '?v=' + ver})
 v = hashlib.sha1(json.dumps(docs, sort_keys=True).encode()).hexdigest()[:12]
 with open('docs.json', 'w', encoding='utf-8') as f:
     json.dump({'v': v, 'files': docs}, f, separators=(',', ':'))
