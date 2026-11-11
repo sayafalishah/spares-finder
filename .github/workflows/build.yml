@@ -1,7 +1,7 @@
 name: Build data.json
 on:
   push:
-    paths: ['*.csv']
+    paths: ['*.csv', '*.xlsx']
   workflow_dispatch:
 permissions:
   contents: write
@@ -11,13 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 convert.py
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install openpyxl
+      - run: python convert.py
       - name: Commit data.json
         run: |
           git config user.name "spares-bot"
           git config user.email "spares-bot@users.noreply.github.com"
           git add data.json
-          git commit -m "Update data.json from CSV" || echo "no change"
+          git commit -m "Update data.json from SAP export" || echo "no change"
           git push
       - name: Rebuild site
         env:
