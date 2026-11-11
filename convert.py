@@ -15,7 +15,7 @@ def last_change(path):
     return int(os.path.getmtime(path))
 
 
-files = [f for f in glob.glob('*.xlsx') + glob.glob('*.csv') if not f.startswith('~$')]
+files = [f for f in os.listdir('.') if f.lower().endswith(('.xlsx', '.csv')) and not f.startswith('~$')]
 if not files:
     sys.exit('Upload the SAP export (.xlsx or .csv) to the repository.')
 path = max(files, key=last_change)
