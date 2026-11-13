@@ -375,20 +375,34 @@ $('#save').onclick=async()=>{
 };
 
 /* ---------- automatic sync for every user ---------- */
+let SIG=null;
+async function sig(){try{const x=await fetch('data.json?v='+Date.now(),{method:'HEAD',cache:'no-store'});if(!x.ok)return null;return['etag','last-modified','content-length'].map(k=>x.headers.get(k)||'').join('|')}catch(e){return null}}
 async function sync(){
   if(!navigator.onLine)return;
   syncDocs();
   try{
+    const s=await sig();if(s&&s===SIG&&DB)return;
     const r=await fetch('data.json?v='+Date.now(),{cache:'no-store'});
     if(!r.ok)return;
     const d=await r.json();
     if(!d||!d.map||!d.rows||!d.rows.length)return;
+    SIG=s;
     if(!DB||d.ts!==DB.ts){setDB(d);await kvSet('data',d);run();toast('Spares list updated')}
   }catch(e){}
 }
 addEventListener('online',sync);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  navigator.serviceWorker.addEventListener('message',e=>{
+    if(e.data!=='app-updated')return;
+    let last=0;try{last=+sessionStorage.getItem('reloaded')||0}catch(_){}
+    if(Date.now()-last<60000)return;
+    try{sessionStorage.setItem('reloaded',Date.now())}catch(_){}
+    toast('App updated, refreshing…');setTimeout(()=>location.reload(),1200);
+  });
+}
+setInterval(()=>{if(!document.hidden)sync()},300000);
 
 /* ---------- home screen / navigation ---------- */
 function view(){const h=location.hash,on=h==='#inv'||h==='#cat';$('#inv').hidden=!on;$('#home').hidden=on;if(h!=='#cat'&&CAT!==null){CAT=null;$('#q').value=''}if(on)run();window.scrollTo(0,0)}
