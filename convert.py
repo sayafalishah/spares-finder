@@ -88,6 +88,7 @@ for r in table[hi + 1:]:
 
 # ---- optional extra search words: files in extra/ with a Material Code column and any other columns ----
 extra = {}
+specs = {}
 if os.path.isdir('extra'):
     for fn in sorted(os.listdir('extra')):
         if not fn.lower().endswith(('.xlsx', '.csv')) or fn.startswith('~$'):
@@ -100,19 +101,34 @@ if os.path.isdir('extra'):
         for r in t[1:]:
             r = r + [''] * len(hh)
             key = re.sub(r'\s+', '', r[ci]).upper()
-            words = [r[i].strip() for i in range(len(hh)) if i != ci and r[i].strip()]
+            sc = [i for i in range(len(hh)) if i != ci and re.search(r'spec', hh[i], re.I)]
+            words = [r[i].strip() for i in range(len(hh)) if i != ci and i not in sc and r[i].strip()]
+            sw = [r[i].strip() for i in sc if r[i].strip()]
+            if key and sw:
+                sl = specs.setdefault(key, [])
+                for w in sw:
+                    if w not in sl:
+                        sl.append(w)
             lst = extra.setdefault(key, []) if key and words else []
             for w in words:
                 if w not in lst:
                     lst.append(w)
         print('Read additional descriptions from', fn)
 out_headers = [headers[i] for i in keep]
+if extra or not specs:
+    pass
 if extra:
     out_headers.append('Additional Description')
     m['extra'] = len(out_headers) - 1
     for r in rows:
         r.append(' | '.join(extra.get(re.sub(r'\s+', '', r[m['code']]).upper(), [])))
     print('Additional descriptions matched', sum(1 for r in rows if r[-1]), 'rows')
+if specs:
+    out_headers.append('Specifications')
+    m['spec'] = len(out_headers) - 1
+    for r in rows:
+        r.append(' | '.join(specs.get(re.sub(r'\s+', '', r[m['code']]).upper(), [])))
+    print('Specifications matched', sum(1 for r in rows if r[-1]), 'rows')
 
 data = {'headers': out_headers, 'rows': rows, 'map': m,
         'ts': int(time.time() * 1000), 'name': os.path.basename(path)}

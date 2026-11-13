@@ -108,6 +108,10 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .vbody{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center}
 .vbody img{max-width:100%;height:auto;display:block}
 .alt{margin:-2px 0 8px;font-size:14px;color:var(--mute)}
+.divider{margin:14px 14px 4px;font-size:14px;font-weight:700;color:var(--mute);border-top:2px solid var(--line);padding-top:10px}
+.specs{margin-top:10px;padding:10px 12px;border-left:4px solid var(--tag);background:#FFC20E1f;border-radius:6px;font-size:15px}
+.mini{margin-right:8px}
+.mini.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -183,7 +187,7 @@ const PAT={code:/material|mat\.?\s?(no|code)|item|part\s?(no|code)|^code$/i,desc
 function guess(h){const m={};const bi=h.findIndex(x=>/bin|rack|shelf/i.test(x));for(const k in PAT){if(k==='loc'&&bi>=0){m[k]=bi;continue}m[k]=h.findIndex((x,j)=>PAT[k].test(x)&&!(k==='code'&&/descr|text/i.test(x))&&!Object.values(m).includes(j))}return m}
 
 /* ---------- search ---------- */
-let FILTER='all',CAT=null,HASCAT=false,PI=-1,OUT=0,DOCS={files:{}};
+let FILTER='all',CAT=null,HASCAT=false,PI=-1,OUT=0,FIRSTOUT=0,DOCS={files:{}};
 const LINES={'1000':'Line 1','1100':'Line 1','1200':'Line 2','1300':'Line 3'}; // plant -> line
 const plabel=p=>/^\d+$/.test(p)?'Plant '+p:p;
 const dk=c=>String(c).replace(/\s+/g,'').toUpperCase();
@@ -201,7 +205,8 @@ function setDB(d){
   IDX=[...g.values()].map(x=>{
     x.qty=x.rows.reduce((a,i)=>a+(m.qty>=0?num(d.rows[i][m.qty]):0),0);
     x.extra=m.extra>=0?[...new Set(x.rows.map(i=>d.rows[i][m.extra]).filter(Boolean))].join(' | '):'';
-    x.c=x.code.toLowerCase();x.h=(x.code+' '+x.desc+' '+x.extra).toLowerCase();
+    x.spec=m.spec>=0?[...new Set(x.rows.map(i=>d.rows[i][m.spec]).filter(Boolean))].join(' | '):'';
+    x.c=x.code.toLowerCase();x.h=(x.code+' '+x.desc+' '+x.extra+' '+x.spec).toLowerCase();
     x.b=x.rows.map(i=>(m.loc>=0?d.rows[i][m.loc]||'':'')+' '+(gi>=0?d.rows[i][gi]||'':'')).join(' ').toLowerCase();
     x.blk=/blocked/i.test(x.desc);x.s=0;x.pl=new Map();
     x.rows.forEach(i=>{const r=d.rows[i],p=PI>=0?(LINES[(r[PI]||'').trim()]||'Other'):'';let o=x.pl.get(p);if(!o){o={rows:[],qty:0};x.pl.set(p,o)}o.rows.push(i);o.qty+=m.qty>=0?num(r[m.qty]):0});
@@ -216,9 +221,10 @@ function run(){
   const q=$('#q').value.trim().toLowerCase(),t=q.split(/\s+/).filter(Boolean);
   if(!DB){results=[];render(t);return}
   if(HASCAT&&CAT===null&&!t.length){renderCats();return}
-  const r=[];OUT=0;
+  const r=[],outside=[];OUT=0;FIRSTOUT=0;
+  const sc=x=>t.every(w=>x.h.includes(w))?(x.c===q?0:x.c.startsWith(q)?1:x.c.includes(q)?2:3):4;
   for(const x of IDX){
-    if(CAT!==null&&!x.pl.has(CAT)){if(t.length&&t.every(w=>(x.h+' '+x.b).includes(w)))OUT++;continue}
+    if(CAT!==null&&!x.pl.has(CAT)){if(t.length&&pass(x,x.qty)&&t.every(w=>(x.h+' '+x.b).includes(w))){x.s=sc(x);outside.push(x)}continue}
     if(!pass(x))continue;
     if(t.length){
       const hb=x.h+' '+x.b;
@@ -228,8 +234,12 @@ function run(){
     r.push(CAT!==null?{...x,rows:x.pl.get(CAT).rows,qty:x.pl.get(CAT).qty}:x);
   }
   if(t.length)r.sort((a,b)=>a.s-b.s);
-  results=r;shown=40;render(t);
+  outside.sort((a,b)=>a.s-b.s);
+  FIRSTOUT=r.length;OUT=outside.length;
+  results=r.concat(outside);shown=40;render(t);
 }
+const specOpen=(x,t)=>!!(x.spec&&t.length&&t.some(w=>x.spec.toLowerCase().includes(w)));
+function specBox(x,t){return x.spec?'<div class="specs"'+(specOpen(x,t)?'':' hidden')+'>'+x.spec.split(' | ').map(s=>hl(s,t)).join('<br>')+'</div>':''}
 function docChips(x){
   const L=docsFor(x);if(!L.length)return '';const cnt={},seen={};L.forEach(d=>cnt[d.t]=(cnt[d.t]||0)+1);
   return '<div class="docs">'+L.map((d,i)=>{seen[d.t]=(seen[d.t]||0)+1;return '<button class="dchip" data-dk="'+esc(dk(x.code))+'" data-di="'+i+'">'+(DL[d.t]||'Document')+(cnt[d.t]>1?' '+seen[d.t]:'')+'</button>'}).join('')+'</div>';
@@ -275,7 +285,7 @@ function card(x,t){
     +'<div class="row2">'+badge+(R.length>1?'<span class="mut">Total of '+R.length+' locations</span>':'')+'</div>'
     +(x.desc?'<p class="desc">'+hl(x.desc,t)+'</p>':'')
     +(x.extra?'<p class="alt">Also known as: '+hl(x.extra,t)+'</p>':'')
-    +'<div class="locs">'+locs+'</div>'+docChips(x)+'<button class="mini"data-share="'+esc(x.code)+'">Share</button>'
+    +'<div class="locs">'+locs+'</div>'+specBox(x,t)+docChips(x)+(x.spec?'<button class="mini'+(specOpen(x,t)?' on':'')+'" data-spec>Specs</button>':'')+'<button class="mini" data-share="'+esc(x.code)+'">Share</button>'
     +'<details><summary>All fields</summary>'+all+'</details></li>';
 }
 function chrome(){
@@ -299,10 +309,10 @@ function render(t){
     return;
   }
   const base=CAT!==null?IDX.reduce((a,x)=>a+(x.pl.has(CAT)?1:0),0):IDX.length;
-  const outBtn=CAT!==null&&OUT>0?'<button class="btn more" data-allplants>Show '+OUT.toLocaleString()+' more from other lines</button>':'';
-  cnt.textContent=(t.length||FILTER!=='all')?results.length.toLocaleString()+' of '+base.toLocaleString()+' materials':base.toLocaleString()+' materials';
+  const outBtn='';
+  cnt.textContent=CAT!==null&&t.length?FIRSTOUT.toLocaleString()+' in '+plabel(CAT)+', '+OUT.toLocaleString()+' in other lines':(t.length||FILTER!=='all')?results.length.toLocaleString()+' of '+base.toLocaleString()+' materials':base.toLocaleString()+' materials';
   if(!results.length){ul.innerHTML='<div class="empty"><h2>No match</h2>Try fewer words, part of the code, or a different filter.</div>'+outBtn;return}
-  ul.innerHTML=results.slice(0,shown).map(x=>card(x,t)).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'')+outBtn;
+  ul.innerHTML=results.slice(0,shown).map((x,i)=>(OUT>0&&i===FIRSTOUT?'<div class="divider">'+(FIRSTOUT?'More from other lines':'Nothing in '+plabel(CAT)+'. From other lines:')+'</div>':'')+card(x,t)).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'')+outBtn;
   const mb=$('#more');if(mb)mb.onclick=()=>{shown+=40;render(t)};
 }
 async function copy(t,msg){
@@ -315,6 +325,7 @@ function shareItem(code){
   if(navigator.share)navigator.share({text}).catch(()=>{});else copy(text,'Item details copied');
 }
 $('#list').addEventListener('click',e=>{
+  const sp=e.target.closest('[data-spec]');if(sp){const p=sp.closest('.item').querySelector('.specs');p.hidden=!p.hidden;sp.classList.toggle('on',!p.hidden);return}
   const dc=e.target.closest('[data-di]');if(dc){openDoc(dc.dataset.dk,+dc.dataset.di);return}
   const ap=e.target.closest('[data-allplants]');if(ap){CAT=null;if(location.hash==='#cat')history.replaceState(null,'','#inv');run();window.scrollTo(0,0);return}
   const ct=e.target.closest('[data-cat]');if(ct){CAT=ct.dataset.cat;$('#q').value='';location.hash='cat';run();window.scrollTo(0,0);return}
