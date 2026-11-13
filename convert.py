@@ -32,14 +32,14 @@ def cell(v):
     return str(v).strip()
 
 
-if path.lower().endswith('.xlsx'):
-    try:
-        import openpyxl
-    except ImportError:
-        sys.exit('openpyxl is missing. Add "pip install openpyxl" to the workflow.')
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    table = [[cell(v) for v in row] for row in wb.worksheets[0].iter_rows(values_only=True)]
-else:
+def read_table(path):
+    if path.lower().endswith('.xlsx'):
+        try:
+            import openpyxl
+        except ImportError:
+            sys.exit('openpyxl is missing. Add "pip install openpyxl" to the workflow.')
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        return [[cell(v) for v in row] for row in wb.worksheets[0].iter_rows(values_only=True)]
     raw = open(path, 'rb').read()
     for enc in ('utf-8-sig', 'cp1252', 'latin-1'):
         try:
@@ -49,7 +49,10 @@ else:
             pass
     first = text.split('\n', 1)[0]
     delim = '\t' if first.count('\t') > first.count(',') else ','
-    table = [[c.strip() for c in r] for r in csv.reader(io.StringIO(text, newline=''), delimiter=delim)]
+    return [[c.strip() for c in r] for r in csv.reader(io.StringIO(text, newline=''), delimiter=delim)]
+
+
+table = read_table(path)
 
 table = [r for r in table if any(c for c in r)]
 hi = next((i for i, r in enumerate(table[:15]) if any(re.search(r'material', c, re.I) for c in r)), 0)
@@ -83,7 +86,35 @@ for r in table[hi + 1:]:
     r = r + [''] * len(headers)
     rows.append([r[i] for i in keep])
 
-data = {'headers': [headers[i] for i in keep], 'rows': rows, 'map': m,
+# ---- optional extra search words: files in extra/ with a Material Code column and any other columns ----
+extra = {}
+if os.path.isdir('extra'):
+    for fn in sorted(os.listdir('extra')):
+        if not fn.lower().endswith(('.xlsx', '.csv')) or fn.startswith('~$'):
+            continue
+        t = [r for r in read_table(os.path.join('extra', fn)) if any(c for c in r)]
+        if not t:
+            continue
+        hh = [h.strip() for h in t[0]]
+        ci = next((i for i, h in enumerate(hh) if re.search(r'material|code', h, re.I)), 0)
+        for r in t[1:]:
+            r = r + [''] * len(hh)
+            key = re.sub(r'\s+', '', r[ci]).upper()
+            words = [r[i].strip() for i in range(len(hh)) if i != ci and r[i].strip()]
+            lst = extra.setdefault(key, []) if key and words else []
+            for w in words:
+                if w not in lst:
+                    lst.append(w)
+        print('Read additional descriptions from', fn)
+out_headers = [headers[i] for i in keep]
+if extra:
+    out_headers.append('Additional Description')
+    m['extra'] = len(out_headers) - 1
+    for r in rows:
+        r.append(' | '.join(extra.get(re.sub(r'\s+', '', r[m['code']]).upper(), [])))
+    print('Additional descriptions matched', sum(1 for r in rows if r[-1]), 'rows')
+
+data = {'headers': out_headers, 'rows': rows, 'map': m,
         'ts': int(time.time() * 1000), 'name': os.path.basename(path)}
 with open('data.json', 'w', encoding='utf-8') as f:
     json.dump(data, f, ensure_ascii=False, separators=(',', ':'))

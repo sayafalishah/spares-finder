@@ -107,6 +107,7 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .vbar .btn{color:#fff;border-color:#fff}
 .vbody{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center}
 .vbody img{max-width:100%;height:auto;display:block}
+.alt{margin:-2px 0 8px;font-size:14px;color:var(--mute)}
 </style>
 </head>
 <body>
@@ -199,7 +200,8 @@ function setDB(d){
   const gi=d.headers.indexOf('External Group');
   IDX=[...g.values()].map(x=>{
     x.qty=x.rows.reduce((a,i)=>a+(m.qty>=0?num(d.rows[i][m.qty]):0),0);
-    x.c=x.code.toLowerCase();x.h=(x.code+' '+x.desc).toLowerCase();
+    x.extra=m.extra>=0?[...new Set(x.rows.map(i=>d.rows[i][m.extra]).filter(Boolean))].join(' | '):'';
+    x.c=x.code.toLowerCase();x.h=(x.code+' '+x.desc+' '+x.extra).toLowerCase();
     x.b=x.rows.map(i=>(m.loc>=0?d.rows[i][m.loc]||'':'')+' '+(gi>=0?d.rows[i][gi]||'':'')).join(' ').toLowerCase();
     x.blk=/blocked/i.test(x.desc);x.s=0;x.pl=new Map();
     x.rows.forEach(i=>{const r=d.rows[i],p=PI>=0?(LINES[(r[PI]||'').trim()]||'Other'):'';let o=x.pl.get(p);if(!o){o={rows:[],qty:0};x.pl.set(p,o)}o.rows.push(i);o.qty+=m.qty>=0?num(r[m.qty]):0});
@@ -272,6 +274,7 @@ function card(x,t){
   return '<li class="item"><div class="row1"><button class="code" data-copy="'+esc(x.code)+'" title="Tap to copy">'+hl(x.code,t)+'</button><span class="qty'+(x.qty<=0?' zero':'')+'">'+qfmt(x.qty)+(unit?'<small>'+esc(unit)+'</small>':'')+'</span></div>'
     +'<div class="row2">'+badge+(R.length>1?'<span class="mut">Total of '+R.length+' locations</span>':'')+'</div>'
     +(x.desc?'<p class="desc">'+hl(x.desc,t)+'</p>':'')
+    +(x.extra?'<p class="alt">Also known as: '+hl(x.extra,t)+'</p>':'')
     +'<div class="locs">'+locs+'</div>'+docChips(x)+'<button class="mini"data-share="'+esc(x.code)+'">Share</button>'
     +'<details><summary>All fields</summary>'+all+'</details></li>';
 }
