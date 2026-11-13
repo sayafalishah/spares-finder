@@ -124,7 +124,7 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 <div id="docbar" hidden><span id="docInfo"></span><button class="btn" id="saveDocs">Save for offline</button></div>
 <div class="bar"><input id="q" type="search" placeholder="Material code or description" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search material code or description">
   <div class="chips" id="chips"><button data-f="all" class="on">All</button><button data-f="in">In stock</button><button data-f="out">Out of stock</button><button data-f="docs">With documents</button></div></div>
-<div id="crumb" hidden><b id="catName"></b><button class="btn" id="allCats">All categories</button></div>
+<div id="crumb" hidden><b id="catName"></b><button class="btn" id="allCats">All lines</button></div>
 <div id="count"></div>
 <ul id="list"></ul>
 </main>
@@ -182,24 +182,29 @@ const PAT={code:/material|mat\.?\s?(no|code)|item|part\s?(no|code)|^code$/i,desc
 function guess(h){const m={};const bi=h.findIndex(x=>/bin|rack|shelf/i.test(x));for(const k in PAT){if(k==='loc'&&bi>=0){m[k]=bi;continue}m[k]=h.findIndex((x,j)=>PAT[k].test(x)&&!(k==='code'&&/descr|text/i.test(x))&&!Object.values(m).includes(j))}return m}
 
 /* ---------- search ---------- */
-let FILTER='all',CAT=null,HASCAT=false,DOCS={files:{}};
+let FILTER='all',CAT=null,HASCAT=false,PI=-1,OUT=0,DOCS={files:{}};
+const LINES={'1000':'Line 1','1100':'Line 1','1200':'Line 2','1300':'Line 3'}; // plant -> line
+const plabel=p=>/^\d+$/.test(p)?'Plant '+p:p;
 const dk=c=>String(c).replace(/\s+/g,'').toUpperCase();
 const docsFor=x=>DOCS.files[dk(x.code)]||[];
-const pass=x=>FILTER==='in'?x.qty>0:FILTER==='out'?!(x.qty>0):FILTER==='docs'?docsFor(x).length>0:true;
+const qOf=x=>CAT!==null&&x.pl&&x.pl.get(CAT)?x.pl.get(CAT).qty:x.qty;
+const pass=(x,q=qOf(x))=>FILTER==='in'?q>0:FILTER==='out'?!(q>0):FILTER==='docs'?docsFor(x).length>0:true;
 const DL={photo:'Photo',drawing:'Drawing',datasheet:'Datasheet',manual:'Manual',other:'Document'};
 const rank=k=>k==='Blocked / Inactive'?2:k==='Other'?1:0;
 const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n};
 const qfmt=n=>n.toLocaleString(undefined,{maximumFractionDigits:3});
 function setDB(d){
-  DB=d;const m=d.map,g=new Map();
+  DB=d;const m=d.map,g=new Map();PI=d.headers.findIndex(h=>/^plant$/i.test(h));
   d.rows.forEach((r,i)=>{const code=(r[m.code]||'').trim()||('row-'+i);let x=g.get(code);if(!x){x={code,rows:[],desc:''};g.set(code,x)}x.rows.push(i);if(!x.desc&&m.desc>=0)x.desc=r[m.desc]||''});
   const gi=d.headers.indexOf('External Group');
   IDX=[...g.values()].map(x=>{
     x.qty=x.rows.reduce((a,i)=>a+(m.qty>=0?num(d.rows[i][m.qty]):0),0);
     x.c=x.code.toLowerCase();x.h=(x.code+' '+x.desc).toLowerCase();
     x.b=x.rows.map(i=>(m.loc>=0?d.rows[i][m.loc]||'':'')+' '+(gi>=0?d.rows[i][gi]||'':'')).join(' ').toLowerCase();
-    x.blk=/blocked/i.test(x.desc);x.cat=m.cat>=0?(d.rows[x.rows[0]][m.cat]||'Other'):'';x.s=0;return x});
-  HASCAT=m.cat>=0;
+    x.blk=/blocked/i.test(x.desc);x.s=0;x.pl=new Map();
+    x.rows.forEach(i=>{const r=d.rows[i],p=PI>=0?(LINES[(r[PI]||'').trim()]||'Other'):'';let o=x.pl.get(p);if(!o){o={rows:[],qty:0};x.pl.set(p,o)}o.rows.push(i);o.qty+=m.qty>=0?num(r[m.qty]):0});
+    return x});
+  HASCAT=PI>=0;
   const when=new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
   $('#statTxt').textContent='Works offline · '+IDX.length.toLocaleString()+' materials · updated '+when;
   $('#homeStat').textContent=IDX.length.toLocaleString()+' materials · updated '+when;
@@ -209,16 +214,16 @@ function run(){
   const q=$('#q').value.trim().toLowerCase(),t=q.split(/\s+/).filter(Boolean);
   if(!DB){results=[];render(t);return}
   if(HASCAT&&CAT===null&&!t.length){renderCats();return}
-  const r=[];
+  const r=[];OUT=0;
   for(const x of IDX){
-    if(CAT!==null&&x.cat!==CAT)continue;
+    if(CAT!==null&&!x.pl.has(CAT)){if(t.length&&t.every(w=>(x.h+' '+x.b).includes(w)))OUT++;continue}
     if(!pass(x))continue;
     if(t.length){
       const hb=x.h+' '+x.b;
       if(!t.every(w=>hb.includes(w)))continue;
       x.s=t.every(w=>x.h.includes(w))?(x.c===q?0:x.c.startsWith(q)?1:x.c.includes(q)?2:3):4;
     }
-    r.push(x);
+    r.push(CAT!==null?{...x,rows:x.pl.get(CAT).rows,qty:x.pl.get(CAT).qty}:x);
   }
   if(t.length)r.sort((a,b)=>a.s-b.s);
   results=r;shown=40;render(t);
@@ -260,7 +265,7 @@ function card(x,t){
   const m=DB.map,H=DB.headers,R=x.rows.map(i=>DB.rows[i]),unit=m.unit>=0?(R[0][m.unit]||''):'';
   const badge=x.blk?'<span class="bdg blk">Blocked</span>':x.qty>0?'<span class="bdg ok">In stock</span>':'<span class="bdg bad">Out of stock</span>';
   const locs=R.map(r=>{const q=m.qty>=0?num(r[m.qty]):0,bn=m.loc>=0?r[m.loc]||'':'';
-    return '<div class="lrow">'+(m.sloc>=0&&r[m.sloc]?'<span class="ls">Store <b>'+esc(r[m.sloc])+'</b></span>':'')
+    return '<div class="lrow">'+(PI>=0&&r[PI]?'<span class="ls">Plant <b>'+esc(r[PI])+'</b></span>':'')+(m.sloc>=0&&r[m.sloc]?'<span class="ls">Store <b>'+esc(r[m.sloc])+'</b></span>':'')
       +(bn?'<button class="bin" data-bin="'+esc(bn)+'">Bin '+esc(bn)+'</button>':'<span class="nb">No bin</span>')
       +'<span class="lq'+(q<=0?' z':'')+'">'+qfmt(q)+'</span></div>'}).join('');
   const all=R.map(r=>'<dl>'+r.map((v,k)=>v?'<dt>'+esc(H[k])+'</dt><dd>'+esc(v)+'</dd>':'').join('')+'</dl>').join('');
@@ -271,17 +276,16 @@ function card(x,t){
     +'<details><summary>All fields</summary>'+all+'</details></li>';
 }
 function chrome(){
-  $('#crumb').hidden=CAT===null;$('#catName').textContent=CAT||'';
+  $('#crumb').hidden=CAT===null;$('#catName').textContent=CAT!==null?plabel(CAT):'';
   $('#back').textContent=CAT!==null?'‹ Back':'‹ Home';
-  $('#q').placeholder=CAT!==null?'Search in '+CAT:'Material code or description';
+  $('#q').placeholder=CAT!==null?'Search in '+plabel(CAT):'Material code or description';
 }
 function renderCats(){
   chrome();const c=new Map();
-  for(const x of IDX){if(!pass(x))continue;
-    let o=c.get(x.cat);if(!o){o={n:0,i:0};c.set(x.cat,o)}o.n++;if(x.qty>0)o.i++}
-  const list=[...c].sort((a,b)=>rank(a[0])-rank(b[0])||b[1].n-a[1].n);
-  $('#count').textContent=list.reduce((a,e)=>a+e[1].n,0).toLocaleString()+' materials in '+list.length+' categories';
-  $('#list').innerHTML=list.length?'<div class="tiles">'+list.map(([k,o])=>'<button class="tile'+(rank(k)===2?' dim':'')+'" data-cat="'+esc(k)+'"><b>'+esc(k)+'</b><span class="tn">'+o.n.toLocaleString()+'</span><small>'+o.i.toLocaleString()+' in stock</small></button>').join('')+'</div>':'<div class="empty"><h2>Nothing here</h2>No materials match this filter.</div>';
+  for(const x of IDX){for(const [p,o] of x.pl){if(!pass(x,o.qty))continue;let e=c.get(p);if(!e){e={n:0,i:0};c.set(p,e)}e.n++;if(o.qty>0)e.i++}}
+  const list=[...c].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),undefined,{numeric:true}));
+  $('#count').textContent='Choose a line, or search all materials above';
+  $('#list').innerHTML=list.length?'<div class="tiles">'+list.map(([k,o])=>'<button class="tile'+(rank(k)===2?' dim':'')+'" data-cat="'+esc(k)+'"><b>'+esc(plabel(k))+'</b><span class="tn">'+o.n.toLocaleString()+'</span><small>'+o.i.toLocaleString()+' in stock</small></button>').join('')+'</div>':'<div class="empty"><h2>Nothing here</h2>No materials match this filter.</div>';
 }
 function render(t){
   chrome();
@@ -291,10 +295,11 @@ function render(t){
     ul.innerHTML='<div class="empty"><h2>No spares list yet</h2>Connect to the internet once and the list downloads automatically. After that it works offline.</div>';
     return;
   }
-  const base=CAT!==null?IDX.reduce((a,x)=>a+(x.cat===CAT),0):IDX.length;
+  const base=CAT!==null?IDX.reduce((a,x)=>a+(x.pl.has(CAT)?1:0),0):IDX.length;
+  const outBtn=CAT!==null&&OUT>0?'<button class="btn more" data-allplants>Show '+OUT.toLocaleString()+' more from other lines</button>':'';
   cnt.textContent=(t.length||FILTER!=='all')?results.length.toLocaleString()+' of '+base.toLocaleString()+' materials':base.toLocaleString()+' materials';
-  if(!results.length){ul.innerHTML='<div class="empty"><h2>No match</h2>Try fewer words, part of the code, or a different filter.</div>';return}
-  ul.innerHTML=results.slice(0,shown).map(x=>card(x,t)).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'');
+  if(!results.length){ul.innerHTML='<div class="empty"><h2>No match</h2>Try fewer words, part of the code, or a different filter.</div>'+outBtn;return}
+  ul.innerHTML=results.slice(0,shown).map(x=>card(x,t)).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'')+outBtn;
   const mb=$('#more');if(mb)mb.onclick=()=>{shown+=40;render(t)};
 }
 async function copy(t,msg){
@@ -308,6 +313,7 @@ function shareItem(code){
 }
 $('#list').addEventListener('click',e=>{
   const dc=e.target.closest('[data-di]');if(dc){openDoc(dc.dataset.dk,+dc.dataset.di);return}
+  const ap=e.target.closest('[data-allplants]');if(ap){CAT=null;if(location.hash==='#cat')history.replaceState(null,'','#inv');run();window.scrollTo(0,0);return}
   const ct=e.target.closest('[data-cat]');if(ct){CAT=ct.dataset.cat;$('#q').value='';location.hash='cat';run();window.scrollTo(0,0);return}
   const c=e.target.closest('[data-copy]');if(c){copy(c.dataset.copy);return}
   const b=e.target.closest('[data-bin]');if(b){$('#q').value=b.dataset.bin;CAT=null;if(location.hash==='#cat')history.replaceState(null,'','#inv');run();window.scrollTo(0,0);return}
