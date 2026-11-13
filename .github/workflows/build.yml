@@ -1,7 +1,7 @@
 name: Build data.json
 on:
   push:
-    paths: ['*.csv', '*.CSV', '*.xlsx', '*.XLSX', 'docs/**']
+    paths: ['*.csv', '*.CSV', '*.xlsx', '*.XLSX', 'docs/**', 'extra/**']
   workflow_dispatch:
 permissions:
   contents: write
