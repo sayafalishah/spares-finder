@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Updating Spares Finder</title>
+<style>body{font:18px/1.4 system-ui,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#E3E7E9;color:#14222B;text-align:center;padding:24px}</style></head>
+<body><p id="m">Updating Spares Finder…</p>
+<script>
+(async()=>{
+  try{
+    if('serviceWorker' in navigator){for(const r of await navigator.serviceWorker.getRegistrations())await r.unregister()}
+    if(window.caches){for(const k of await caches.keys())await caches.delete(k)}
+  }catch(e){}
+  document.getElementById('m').textContent='Done. Opening the app…';
+  setTimeout(()=>location.replace('./?fresh='+Date.now()),700);
+})();
+</script></body></html>

@@ -1,7 +1,17 @@
 const C='spares-v3';
 const SHELL=['./','index.html','manifest.webmanifest','icon-192.png','icon-512.png'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(SHELL)));self.skipWaiting()});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
+let isUpdate=false;
+self.addEventListener('install',e=>{
+  e.waitUntil((async()=>{isUpdate=await caches.has(C);const c=await caches.open(C);await c.addAll(SHELL.map(u=>new Request(u,{cache:'reload'})))})());
+  self.skipWaiting();
+});
+self.addEventListener('activate',e=>{
+  e.waitUntil((async()=>{
+    for(const k of await caches.keys())if(k!==C)await caches.delete(k);
+    await self.clients.claim();
+    if(isUpdate)(await self.clients.matchAll({type:'window'})).forEach(c=>c.postMessage('app-updated'));
+  })());
+});
 const keep=(req,r)=>{if(r.status===200){const c2=r.clone();caches.open(C).then(c=>c.put(req,c2)).catch(()=>{})}return r};
 self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
@@ -10,12 +20,13 @@ self.addEventListener('fetch',e=>{
     e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>keep(e.request,r))));
     return;
   }
-  // The app page itself: always try the network first so a new version shows up on the very next open;
-  // fall back to the saved copy when offline or when the network is slow (3.5 s).
+  // The app page: ask the network first (revalidating, never a stale browser copy) so a new version
+  // appears on the very next open; use the saved copy when offline or slower than 3.5 s.
   if(e.request.mode==='navigate'||u.pathname.endsWith('/')||u.pathname.endsWith('index.html')){
     e.respondWith((async()=>{
       const cached=await caches.match(e.request,{ignoreSearch:true});
-      const net=fetch(e.request);net.catch(()=>{});
+      const nu=new URL(e.request.url);nu.searchParams.set('_',Date.now());
+      const net=fetch(nu.href,{cache:'no-store'});net.catch(()=>{});
       try{
         const r=cached?await Promise.race([net,new Promise((_,rej)=>setTimeout(rej,3500))]):await net;
         return keep(e.request,r);

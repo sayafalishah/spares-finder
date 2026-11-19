@@ -116,6 +116,10 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 #homeBtns .bigbtn{padding:18px 20px}
 .tile.none{opacity:.45}
 .ver{margin:18px 0 0;font-size:12px;color:var(--mute);text-align:center}
+#boot{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--mute)}
+#boot[hidden]{display:none}
+.spin{width:34px;height:34px;border:4px solid var(--line);border-top-color:var(--tag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -139,6 +143,7 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 <ul id="list"></ul>
 </main>
 <div id="viewer" hidden><div class="vbar"><b id="vcap"></b><button class="btn" id="vclose">Close</button></div><div class="vbody"><img id="vimg" alt=""></div></div>
+<div id="boot" hidden><div class="spin"></div><p>Checking for updates…</p></div>
 <div id="toast" hidden></div>
 
 <dialog id="imp">
@@ -192,7 +197,7 @@ const PAT={code:/material|mat\.?\s?(no|code)|item|part\s?(no|code)|^code$/i,desc
 function guess(h){const m={};const bi=h.findIndex(x=>/bin|rack|shelf/i.test(x));for(const k in PAT){if(k==='loc'&&bi>=0){m[k]=bi;continue}m[k]=h.findIndex((x,j)=>PAT[k].test(x)&&!(k==='code'&&/descr|text/i.test(x))&&!Object.values(m).includes(j))}return m}
 
 /* ---------- search ---------- */
-const APP_VERSION='2026-11-19c';
+const APP_VERSION='2026-11-19e';
 const INVS=[{id:'instrument',title:'Instrument Inventory',file:'data.json',key:'data'},{id:'general',title:'General Items',file:'data-general.json',key:'data-general'},{id:'misc',title:'Miscellaneous Items',file:'data-misc.json',key:'data-misc'},{id:'electrical',title:'Electrical Inventory',file:'data-electrical.json',key:'data-electrical'},{id:'mechanical',title:'Mechanical Inventory',file:'data-mechanical.json',key:'data-mechanical'}];
 let INV=null,CUR=null;const RAW={},SIGS={};
 const invOf=id=>INVS.find(v=>v.id===id);
@@ -411,7 +416,7 @@ async function checkApp(){
     let last=0;try{last=+sessionStorage.getItem('reloaded')||0}catch(_){}
     if(Date.now()-last<60000)return;
     try{sessionStorage.setItem('reloaded',Date.now())}catch(_){}
-    toast('New version found, refreshing…');setTimeout(()=>location.reload(),1200);
+    $('#boot').hidden=false;$('#boot p').textContent='Updating the app…';setTimeout(()=>location.reload(),300);
   }catch(e){}
 }
 let SYNCING=false;
@@ -419,8 +424,7 @@ async function sync(){
   if(!navigator.onLine||SYNCING)return;
   SYNCING=true;
   try{
-    checkApp();syncDocs();
-    for(const v of INVS){try{await syncInv(v)}catch(e){}}
+    await Promise.all([checkApp(),syncDocs(),...INVS.map(v=>syncInv(v).catch(()=>{}))]);
     $('#chk').textContent=' · checked '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   }finally{SYNCING=false}
 }
@@ -433,7 +437,7 @@ if('serviceWorker' in navigator){
     let last=0;try{last=+sessionStorage.getItem('reloaded')||0}catch(_){}
     if(Date.now()-last<60000)return;
     try{sessionStorage.setItem('reloaded',Date.now())}catch(_){}
-    toast('App updated, refreshing…');setTimeout(()=>location.reload(),1200);
+    $('#boot').hidden=false;$('#boot p').textContent='Updating the app…';setTimeout(()=>location.reload(),300);
   });
 }
 setInterval(()=>{if(!document.hidden)sync()},120000);
@@ -457,7 +461,9 @@ addEventListener('hashchange',view);view();
   const dd=await kvGet('docs');if(dd)setDocs(dd);
   for(const v of INVS){const d=await kvGet(v.key);if(d&&d.rows)RAW[v.id]=d}
   if(CUR&&RAW[CUR])setDB(RAW[CUR]);
-  updateHome();run();sync();
+  updateHome();run();
+  if(navigator.onLine){$('#boot').hidden=false;await Promise.race([sync(),new Promise(r=>setTimeout(r,2500))]);$('#boot').hidden=true}
+  else sync();
 })();
 </script>
 </body>
