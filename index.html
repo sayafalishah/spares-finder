@@ -115,10 +115,12 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .bigbtn{margin-bottom:12px}
 #homeBtns .bigbtn{padding:18px 20px}
 .tile.none{opacity:.45}
+.ver{margin:18px 0 0;font-size:12px;color:var(--mute);text-align:center}
 </style>
 </head>
 <body>
-<section id="home"><div class="homewrap"><img class="logo" src="icon-192.png" alt=""><h1 class="hometitle">Spares Finder</h1><p class="homesub">Choose an inventory</p><div id="homeBtns"></div></div></section>
+<section id="home"><div class="homewrap"><img class="logo" src="icon-192.png" alt=""><h1 class="hometitle">Spares Finder</h1><p class="homesub">Choose an inventory</p><div id="homeBtns"></div>
+<p class="ver" id="ver"></p></div></section>
 <main id="inv" hidden>
 <header>
   <button class="btn" id="back" aria-label="Back to home">‹ Home</button>
@@ -127,7 +129,7 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
   <button class="btn" id="expBtn" hidden>Export for publishing</button>
   <button class="btn main" id="updBtn" hidden>Update data</button>
 </header>
-<div id="stat"><i></i><span id="statTxt">Works offline · no data loaded yet</span></div>
+<div id="stat"><i></i><span id="statTxt">Works offline · no data loaded yet</span><span id="chk"></span></div>
 <div id="stale" hidden></div>
 <div id="docbar" hidden><span id="docInfo"></span><button class="btn" id="saveDocs">Save for offline</button></div>
 <div class="bar"><input id="q" type="search" placeholder="Material code or description" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search material code or description">
@@ -190,6 +192,7 @@ const PAT={code:/material|mat\.?\s?(no|code)|item|part\s?(no|code)|^code$/i,desc
 function guess(h){const m={};const bi=h.findIndex(x=>/bin|rack|shelf/i.test(x));for(const k in PAT){if(k==='loc'&&bi>=0){m[k]=bi;continue}m[k]=h.findIndex((x,j)=>PAT[k].test(x)&&!(k==='code'&&/descr|text/i.test(x))&&!Object.values(m).includes(j))}return m}
 
 /* ---------- search ---------- */
+const APP_VERSION='2026-11-19c';
 const INVS=[{id:'instrument',title:'Instrument Inventory',file:'data.json',key:'data'},{id:'general',title:'General Items',file:'data-general.json',key:'data-general'},{id:'misc',title:'Miscellaneous Items',file:'data-misc.json',key:'data-misc'},{id:'electrical',title:'Electrical Inventory',file:'data-electrical.json',key:'data-electrical'},{id:'mechanical',title:'Mechanical Inventory',file:'data-mechanical.json',key:'data-mechanical'}];
 let INV=null,CUR=null;const RAW={},SIGS={};
 const invOf=id=>INVS.find(v=>v.id===id);
@@ -401,10 +404,25 @@ async function syncInv(v){
   SIGS[v.id]=s;const old=RAW[v.id];
   if(!old||d.ts!==old.ts){RAW[v.id]=d;await kvSet(v.key,d);updateHome();if(CUR===v.id){setDB(d);run()}if(old)toast(v.title+' updated')}
 }
+async function checkApp(){
+  try{const r=await fetch('index.html?v='+Date.now(),{cache:'no-store'});if(!r.ok)return;
+    const m=(await r.text()).match(/APP_VERSION='([^']+)'/);
+    if(!m||m[1]===APP_VERSION)return;
+    let last=0;try{last=+sessionStorage.getItem('reloaded')||0}catch(_){}
+    if(Date.now()-last<60000)return;
+    try{sessionStorage.setItem('reloaded',Date.now())}catch(_){}
+    toast('New version found, refreshing…');setTimeout(()=>location.reload(),1200);
+  }catch(e){}
+}
+let SYNCING=false;
 async function sync(){
-  if(!navigator.onLine)return;
-  syncDocs();
-  for(const v of INVS){try{await syncInv(v)}catch(e){}}
+  if(!navigator.onLine||SYNCING)return;
+  SYNCING=true;
+  try{
+    checkApp();syncDocs();
+    for(const v of INVS){try{await syncInv(v)}catch(e){}}
+    $('#chk').textContent=' · checked '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  }finally{SYNCING=false}
 }
 addEventListener('online',sync);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
@@ -418,7 +436,9 @@ if('serviceWorker' in navigator){
     toast('App updated, refreshing…');setTimeout(()=>location.reload(),1200);
   });
 }
-setInterval(()=>{if(!document.hidden)sync()},300000);
+setInterval(()=>{if(!document.hidden)sync()},120000);
+addEventListener('focus',sync);addEventListener('pageshow',sync);
+$('#ver').textContent='App version '+APP_VERSION;
 
 /* ---------- home screen / navigation ---------- */
 function view(){
