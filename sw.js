@@ -7,7 +7,7 @@ const same=async(a,b)=>{try{return (await a.clone().text())===(await b.clone().t
 const notify=()=>self.clients.matchAll({type:'window'}).then(cs=>cs.forEach(c=>c.postMessage('app-updated')));
 self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
-  if(e.request.method!=='GET'||u.origin!==location.origin||/\/(data|docs)\.json$/.test(u.pathname))return;
+  if(e.request.method!=='GET'||u.origin!==location.origin||/\/(data(-\w+)?|docs)\.json$/.test(u.pathname))return;
   if(u.pathname.includes('/docs/')){
     e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>keep(e.request,r))));
     return;

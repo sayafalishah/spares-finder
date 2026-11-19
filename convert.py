@@ -1,25 +1,22 @@
-"""Builds data.json for Spares Finder from the SAP export (.xlsx or .csv) in this repository."""
+"""Builds the data files for Spares Finder from the SAP exports (.xlsx or .csv) in this repository.
+
+Every export in the main folder is read. Each row goes to an inventory by its material code prefix
+(for example CC_GH_ = General Items). If the prefix is not listed, the file name decides
+(a file called Electrical_Inventory.xlsx fills the Electrical inventory).
+"""
 import csv, datetime, hashlib, io, json, os, re, subprocess, sys, time
 from urllib.parse import quote
 
 DROP = []  # columns to leave out of the app, e.g. ['Rate', 'Last PO No']
 
-
-def last_change(path):
-    try:
-        out = subprocess.run(['git', 'log', '-1', '--format=%ct', '--', path],
-                             capture_output=True, text=True).stdout.strip()
-        if out:
-            return int(out)
-    except Exception:
-        pass
-    return int(os.path.getmtime(path))
-
-
-files = [f for f in os.listdir('.') if f.lower().endswith(('.xlsx', '.csv')) and not f.startswith('~$')]
-if not files:
-    sys.exit('Upload the SAP export (.xlsx or .csv) to the repository.')
-path = max(files, key=last_change)
+# id, title, material code prefixes, file-name hints, output file
+INVENTORIES = [
+    ('instrument', 'Instrument Inventory', ['CC_INST_'], ['instrument'], 'data.json'),
+    ('general', 'General Items', ['CC_GH_'], ['general', 'gh_'], 'data-general.json'),
+    ('misc', 'Miscellaneous Items', ['CC_MISC_'], ['misc'], 'data-misc.json'),
+    ('electrical', 'Electrical Inventory', ['CC_ELEC_'], ['electrical', 'elec'], 'data-electrical.json'),
+    ('mechanical', 'Mechanical Inventory', ['CC_MECH_'], ['mechanical', 'mech'], 'data-mechanical.json'),
+]
 
 
 def cell(v):
@@ -52,14 +49,12 @@ def read_table(path):
     return [[c.strip() for c in r] for r in csv.reader(io.StringIO(text, newline=''), delimiter=delim)]
 
 
-table = read_table(path)
 
-table = [r for r in table if any(c for c in r)]
-hi = next((i for i, r in enumerate(table[:15]) if any(re.search(r'material', c, re.I) for c in r)), 0)
-headers = [h.strip() for h in table[hi]]
+def norm(c):
+    return re.sub(r'\s+', '', c).upper()
 
 
-def find(*patterns):
+def find(headers, *patterns):
     for p in patterns:
         for i, h in enumerate(headers):
             if re.search(p, h, re.I):
@@ -67,24 +62,42 @@ def find(*patterns):
     return -1
 
 
-m = {
-    'code': find(r'^material\s*code$', r'material.*(code|no)', r'^material$'),
-    'desc': find(r'^description$', r'descr'),
-    'loc': find(r'bin|rack|shelf'),
-    'sloc': find(r'storage'),
-    'qty': find(r'unrestricted', r'qty|quant|stock'),
-    'unit': find(r'base unit', r'unit|uom'),
-}
-if m['code'] < 0:
-    sys.exit('No Material Code column found. Columns are: ' + ', '.join(headers))
+CODE_PATTERNS = (r'^material\s*code$', r'material.*(code|no)', r'^material$')
 
-keep = [i for i, h in enumerate(headers) if h not in DROP]
-new = {old: n for n, old in enumerate(keep)}
-m = {k: new.get(v, -1) for k, v in m.items()}
-rows = []
-for r in table[hi + 1:]:
-    r = r + [''] * len(headers)
-    rows.append([r[i] for i in keep])
+# ---- 1. read every SAP export in the main folder and sort its rows into inventories ----
+files = sorted(f for f in os.listdir('.') if f.lower().endswith(('.xlsx', '.csv')) and not f.startswith('~$'))
+if not files:
+    sys.exit('Upload the SAP export (.xlsx or .csv) to the repository.')
+groups = {inv[0]: [] for inv in INVENTORIES}
+unassigned = []
+for path in files:
+    table = [r for r in read_table(path) if any(c for c in r)]
+    if not table:
+        continue
+    hi = next((i for i, r in enumerate(table[:15]) if any(re.search(r'material', c, re.I) for c in r)), 0)
+    headers = [h.strip() for h in table[hi]]
+    ci = find(headers, *CODE_PATTERNS)
+    if ci < 0:
+        print('SKIPPED', path, '- no Material Code column. Columns are:', ', '.join(headers))
+        continue
+    fname = os.path.basename(path).lower()
+    hint = next((i[0] for i in INVENTORIES if any(k in fname for k in i[3])), None)
+    per = {}
+    for r in table[hi + 1:]:
+        r = (r + [''] * len(headers))[:len(headers)]
+        code = norm(r[ci])
+        if not code:
+            continue
+        inv = next((i[0] for i in INVENTORIES if any(code.startswith(p) for p in i[2])), hint)
+        if inv is None:
+            unassigned.append(code)
+            continue
+        per.setdefault(inv, []).append(r)
+    for inv, rs in per.items():
+        groups[inv].append((headers, rs, os.path.basename(path)))
+    print(path, '->', {k: len(v) for k, v in per.items()})
+if unassigned:
+    print('WARNING:', len(unassigned), 'rows have a code that matches no inventory, for example', unassigned[:5])
 
 # ---- optional extra search words: files in extra/ with a Material Code column and any other columns ----
 extra = {}
@@ -114,27 +127,53 @@ if os.path.isdir('extra'):
                 if w not in lst:
                     lst.append(w)
         print('Read additional descriptions from', fn)
-out_headers = [headers[i] for i in keep]
-if extra or not specs:
-    pass
-if extra:
-    out_headers.append('Additional Description')
-    m['extra'] = len(out_headers) - 1
-    for r in rows:
-        r.append(' | '.join(extra.get(re.sub(r'\s+', '', r[m['code']]).upper(), [])))
-    print('Additional descriptions matched', sum(1 for r in rows if r[-1]), 'rows')
-if specs:
-    out_headers.append('Specifications')
-    m['spec'] = len(out_headers) - 1
-    for r in rows:
-        r.append(' | '.join(specs.get(re.sub(r'\s+', '', r[m['code']]).upper(), [])))
-    print('Specifications matched', sum(1 for r in rows if r[-1]), 'rows')
 
-data = {'headers': out_headers, 'rows': rows, 'map': m,
-        'ts': int(time.time() * 1000), 'name': os.path.basename(path)}
-with open('data.json', 'w', encoding='utf-8') as f:
-    json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
-print('Wrote data.json:', len(rows), 'items from', path, m)
+# ---- 2. write one data file per inventory ----
+for inv_id, title, _prefixes, _hints, out_file in INVENTORIES:
+    parts = groups[inv_id]
+    if not parts:
+        print('No data yet for', title)
+        continue
+    hs = []
+    for headers, _rs, _n in parts:
+        for h in headers:
+            if h and h not in hs and h not in DROP:
+                hs.append(h)
+    rows = []
+    for headers, rs, _n in parts:
+        idx = [headers.index(h) if h in headers else -1 for h in hs]
+        rows += [[r[i] if i >= 0 else '' for i in idx] for r in rs]
+    m = {
+        'code': find(hs, *CODE_PATTERNS),
+        'desc': find(hs, r'^description$', r'descr'),
+        'loc': find(hs, r'bin|rack|shelf'),
+        'sloc': find(hs, r'storage'),
+        'qty': find(hs, r'unrestricted', r'qty|quant|stock'),
+        'unit': find(hs, r'base unit', r'unit|uom'),
+    }
+    for label, store, key in (('Additional Description', extra, 'extra'), ('Specifications', specs, 'spec')):
+        vals = [' | '.join(store.get(norm(r[m['code']]), [])) for r in rows] if store else []
+        if any(vals):
+            hs.append(label)
+            m[key] = len(hs) - 1
+            for r, v in zip(rows, vals):
+                r.append(v)
+            print(title, '-', label, 'matched', sum(1 for v in vals if v), 'rows')
+    data = {'headers': hs, 'rows': rows, 'map': m, 'id': inv_id, 'title': title,
+            'name': ', '.join(sorted({n for _h, _r, n in parts}))}
+    digest = hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest()[:12]
+    try:
+        same = json.load(open(out_file, encoding='utf-8')).get('h') == digest
+    except Exception:
+        same = False
+    if same:
+        print(title, ': unchanged,', len(rows), 'rows')
+        continue
+    data['ts'] = int(time.time() * 1000)
+    data['h'] = digest
+    with open(out_file, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
+    print('Wrote', out_file, ':', len(rows), 'rows for', title)
 
 # ---- documents: files in docs/ named CODE__type.ext, e.g. CC_INST_01010010__datasheet.pdf ----
 TYPES = {'photo', 'drawing', 'datasheet', 'manual'}

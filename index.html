@@ -112,10 +112,12 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .specs{margin-top:10px;padding:10px 12px;border-left:4px solid var(--tag);background:#FFC20E1f;border-radius:6px;font-size:15px}
 .mini{margin-right:8px}
 .mini.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.bigbtn{margin-bottom:12px}
+#homeBtns .bigbtn{padding:18px 20px}
 </style>
 </head>
 <body>
-<section id="home"><div class="homewrap"><img class="logo" src="icon-192.png" alt=""><h1 class="hometitle">Spares Finder</h1><p class="homesub">Choose an inventory</p><button class="bigbtn" id="openInv"><span>Instrument Inventory</span><small id="homeStat">No data yet. Connect to the internet once.</small></button></div></section>
+<section id="home"><div class="homewrap"><img class="logo" src="icon-192.png" alt=""><h1 class="hometitle">Spares Finder</h1><p class="homesub">Choose an inventory</p><div id="homeBtns"></div></div></section>
 <main id="inv" hidden>
 <header>
   <button class="btn" id="back" aria-label="Back to home">‹ Home</button>
@@ -187,6 +189,21 @@ const PAT={code:/material|mat\.?\s?(no|code)|item|part\s?(no|code)|^code$/i,desc
 function guess(h){const m={};const bi=h.findIndex(x=>/bin|rack|shelf/i.test(x));for(const k in PAT){if(k==='loc'&&bi>=0){m[k]=bi;continue}m[k]=h.findIndex((x,j)=>PAT[k].test(x)&&!(k==='code'&&/descr|text/i.test(x))&&!Object.values(m).includes(j))}return m}
 
 /* ---------- search ---------- */
+const INVS=[{id:'instrument',title:'Instrument Inventory',file:'data.json',key:'data'},{id:'general',title:'General Items',file:'data-general.json',key:'data-general'},{id:'misc',title:'Miscellaneous Items',file:'data-misc.json',key:'data-misc'},{id:'electrical',title:'Electrical Inventory',file:'data-electrical.json',key:'data-electrical'},{id:'mechanical',title:'Mechanical Inventory',file:'data-mechanical.json',key:'data-mechanical'}];
+let INV=null,CUR=null;const RAW={},SIGS={};
+const invOf=id=>INVS.find(v=>v.id===id);
+const nUniq=d=>new Set(d.rows.map(r=>String(r[d.map.code]||'').trim())).size;
+function updateHome(){
+  $('#homeBtns').innerHTML=INVS.map(v=>{const d=RAW[v.id];
+    const sub=d?nUniq(d).toLocaleString()+' materials · updated '+new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'No data yet. Connect to the internet once.';
+    return '<button class="bigbtn" data-inv="'+v.id+'"><span>'+v.title+'</span><small>'+sub+'</small></button>'}).join('');
+}
+function useInv(id){
+  if(CUR===id)return;CUR=id;INV=id;CAT=null;FILTER='all';$('#q').value='';
+  [...$('#chips').children].forEach(c=>c.classList.toggle('on',c.dataset.f==='all'));
+  $('#title').textContent=invOf(id).title;
+  if(RAW[id])setDB(RAW[id]);else{DB=null;IDX=[];$('#statTxt').textContent='Works offline · no data loaded yet';$('#stale').hidden=true}
+}
 let FILTER='all',CAT=null,HASCAT=false,PI=-1,OUT=0,FIRSTOUT=0,DOCS={files:{}};
 const LINES={'1000':'Line 1','1100':'Line 1','1200':'Line 2','1300':'Line 3'}; // plant -> line
 const plabel=p=>/^\d+$/.test(p)?'Plant '+p:p;
@@ -206,7 +223,7 @@ function setDB(d){
     x.qty=x.rows.reduce((a,i)=>a+(m.qty>=0?num(d.rows[i][m.qty]):0),0);
     x.extra=m.extra>=0?[...new Set(x.rows.map(i=>d.rows[i][m.extra]).filter(Boolean))].join(' | '):'';
     x.spec=m.spec>=0?[...new Set(x.rows.map(i=>d.rows[i][m.spec]).filter(Boolean))].join(' | '):'';
-    x.c=x.code.toLowerCase();x.h=(x.code+' '+x.desc+' '+x.extra+' '+x.spec).toLowerCase();
+    x.c=x.code.toLowerCase();x.h=(x.code+' '+x.code.replace(/\s+/g,'')+' '+x.desc+' '+x.extra+' '+x.spec).toLowerCase();
     x.b=x.rows.map(i=>(m.loc>=0?d.rows[i][m.loc]||'':'')+' '+(gi>=0?d.rows[i][gi]||'':'')).join(' ').toLowerCase();
     x.blk=/blocked/i.test(x.desc);x.s=0;x.pl=new Map();
     x.rows.forEach(i=>{const r=d.rows[i],p=PI>=0?(LINES[(r[PI]||'').trim()]||'Other'):'';let o=x.pl.get(p);if(!o){o={rows:[],qty:0};x.pl.set(p,o)}o.rows.push(i);o.qty+=m.qty>=0?num(r[m.qty]):0});
@@ -214,7 +231,6 @@ function setDB(d){
   HASCAT=PI>=0;
   const when=new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
   $('#statTxt').textContent='Works offline · '+IDX.length.toLocaleString()+' materials · updated '+when;
-  $('#homeStat').textContent=IDX.length.toLocaleString()+' materials · updated '+when;
   const st=$('#stale');st.hidden=Date.now()-d.ts<7*864e5;st.textContent='Stock shown as of '+when+'. Check SAP for current figures.';
 }
 function run(){
@@ -305,7 +321,7 @@ function render(t){
   const ul=$('#list'),cnt=$('#count');
   if(!DB){
     cnt.textContent='';
-    ul.innerHTML='<div class="empty"><h2>No spares list yet</h2>Connect to the internet once and the list downloads automatically. After that it works offline.</div>';
+    ul.innerHTML='<div class="empty"><h2>No data yet</h2>Connect to the internet once and the list downloads automatically. After that it works offline. If it stays empty, the Excel file for this inventory has not been uploaded yet.</div>';
     return;
   }
   const base=CAT!==null?IDX.reduce((a,x)=>a+(x.pl.has(CAT)?1:0),0):IDX.length;
@@ -327,10 +343,10 @@ function shareItem(code){
 $('#list').addEventListener('click',e=>{
   const sp=e.target.closest('[data-spec]');if(sp){const p=sp.closest('.item').querySelector('.specs');p.hidden=!p.hidden;sp.classList.toggle('on',!p.hidden);return}
   const dc=e.target.closest('[data-di]');if(dc){openDoc(dc.dataset.dk,+dc.dataset.di);return}
-  const ap=e.target.closest('[data-allplants]');if(ap){CAT=null;if(location.hash==='#cat')history.replaceState(null,'','#inv');run();window.scrollTo(0,0);return}
-  const ct=e.target.closest('[data-cat]');if(ct){CAT=ct.dataset.cat;$('#q').value='';location.hash='cat';run();window.scrollTo(0,0);return}
+  const ap=e.target.closest('[data-allplants]');if(ap){CAT=null;if(location.hash==='#c-'+INV)history.replaceState(null,'','#i-'+INV);run();window.scrollTo(0,0);return}
+  const ct=e.target.closest('[data-cat]');if(ct){CAT=ct.dataset.cat;$('#q').value='';location.hash='c-'+INV;run();window.scrollTo(0,0);return}
   const c=e.target.closest('[data-copy]');if(c){copy(c.dataset.copy);return}
-  const b=e.target.closest('[data-bin]');if(b){$('#q').value=b.dataset.bin;CAT=null;if(location.hash==='#cat')history.replaceState(null,'','#inv');run();window.scrollTo(0,0);return}
+  const b=e.target.closest('[data-bin]');if(b){$('#q').value=b.dataset.bin;CAT=null;if(location.hash==='#c-'+INV)history.replaceState(null,'','#i-'+INV);run();window.scrollTo(0,0);return}
   const sh=e.target.closest('[data-share]');if(sh)shareItem(sh.dataset.share);
 });
 $('#chips').onclick=e=>{const b=e.target.closest('button');if(!b)return;FILTER=b.dataset.f;[...$('#chips').children].forEach(c=>c.classList.toggle('on',c===b));run()};
@@ -375,20 +391,18 @@ $('#save').onclick=async()=>{
 };
 
 /* ---------- automatic sync for every user ---------- */
-let SIG=null;
-async function sig(){try{const x=await fetch('data.json?v='+Date.now(),{method:'HEAD',cache:'no-store'});if(!x.ok)return null;return['etag','last-modified','content-length'].map(k=>x.headers.get(k)||'').join('|')}catch(e){return null}}
+async function sig(f){try{const x=await fetch(f+'?v='+Date.now(),{method:'HEAD',cache:'no-store'});if(x.status===404)return 'MISSING';if(!x.ok)return null;return['etag','last-modified','content-length'].map(k=>x.headers.get(k)||'').join('|')}catch(e){return null}}
+async function syncInv(v){
+  const s=await sig(v.file);if(s==='MISSING'||(s&&s===SIGS[v.id]&&RAW[v.id]))return;
+  const r=await fetch(v.file+'?v='+Date.now(),{cache:'no-store'});if(!r.ok)return;
+  const d=await r.json();if(!d||!d.map||!d.rows||!d.rows.length)return;
+  SIGS[v.id]=s;const old=RAW[v.id];
+  if(!old||d.ts!==old.ts){RAW[v.id]=d;await kvSet(v.key,d);updateHome();if(CUR===v.id){setDB(d);run()}if(old)toast(v.title+' updated')}
+}
 async function sync(){
   if(!navigator.onLine)return;
   syncDocs();
-  try{
-    const s=await sig();if(s&&s===SIG&&DB)return;
-    const r=await fetch('data.json?v='+Date.now(),{cache:'no-store'});
-    if(!r.ok)return;
-    const d=await r.json();
-    if(!d||!d.map||!d.rows||!d.rows.length)return;
-    SIG=s;
-    if(!DB||d.ts!==DB.ts){setDB(d);await kvSet('data',d);run();toast('Spares list updated')}
-  }catch(e){}
+  for(const v of INVS){try{await syncInv(v)}catch(e){}}
 }
 addEventListener('online',sync);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
@@ -405,14 +419,24 @@ if('serviceWorker' in navigator){
 setInterval(()=>{if(!document.hidden)sync()},300000);
 
 /* ---------- home screen / navigation ---------- */
-function view(){const h=location.hash,on=h==='#inv'||h==='#cat';$('#inv').hidden=!on;$('#home').hidden=on;if(h!=='#cat'&&CAT!==null){CAT=null;$('#q').value=''}if(on)run();window.scrollTo(0,0)}
-$('#openInv').onclick=()=>{location.hash='inv'};
+function view(){
+  const h=location.hash,m=h.match(/^#([ic])-(\w+)$/),v=m&&invOf(m[2]),on=!!v;
+  $('#inv').hidden=!on;$('#home').hidden=on;
+  if(on){useInv(v.id);if(m[1]==='i'&&CAT!==null){CAT=null;$('#q').value=''}run()}
+  window.scrollTo(0,0);
+}
+$('#homeBtns').onclick=e=>{const b=e.target.closest('[data-inv]');if(b)location.hash='i-'+b.dataset.inv};
 $('#allCats').onclick=()=>history.back();
 $('#back').onclick=()=>{history.length>1?history.back():(location.hash='')};
 addEventListener('hashchange',view);view();
 
 /* ---------- start ---------- */
-(async()=>{const dd=await kvGet('docs');if(dd)setDocs(dd);const st=await kvGet('data');if(st)setDB(st);run();sync()})();
+(async()=>{
+  const dd=await kvGet('docs');if(dd)setDocs(dd);
+  for(const v of INVS){const d=await kvGet(v.key);if(d&&d.rows)RAW[v.id]=d}
+  if(CUR&&RAW[CUR])setDB(RAW[CUR]);
+  updateHome();run();sync();
+})();
 </script>
 </body>
 </html>
