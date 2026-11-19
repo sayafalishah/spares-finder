@@ -114,6 +114,7 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .mini.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .bigbtn{margin-bottom:12px}
 #homeBtns .bigbtn{padding:18px 20px}
+.tile.none{opacity:.45}
 </style>
 </head>
 <body>
@@ -131,7 +132,7 @@ dl+dl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 <div id="docbar" hidden><span id="docInfo"></span><button class="btn" id="saveDocs">Save for offline</button></div>
 <div class="bar"><input id="q" type="search" placeholder="Material code or description" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search material code or description">
   <div class="chips" id="chips"><button data-f="all" class="on">All</button><button data-f="in">In stock</button><button data-f="out">Out of stock</button><button data-f="docs">With documents</button></div></div>
-<div id="crumb" hidden><b id="catName"></b><button class="btn" id="allCats">All lines</button></div>
+<div id="crumb" hidden><b id="catName"></b><button class="btn" id="allCats">All categories</button></div>
 <div id="count"></div>
 <ul id="list"></ul>
 </main>
@@ -206,13 +207,13 @@ function useInv(id){
 }
 let FILTER='all',CAT=null,HASCAT=false,PI=-1,OUT=0,FIRSTOUT=0,DOCS={files:{}};
 const LINES={'1000':'Line 1','1100':'Line 1','1200':'Line 2','1300':'Line 3'}; // plant -> line
-const plabel=p=>/^\d+$/.test(p)?'Plant '+p:p;
+const plabel=p=>p==='Blocked'?'Blocked Codes':/^\d+$/.test(p)?'Plant '+p:p;
 const dk=c=>String(c).replace(/\s+/g,'').toUpperCase();
 const docsFor=x=>DOCS.files[dk(x.code)]||[];
 const qOf=x=>CAT!==null&&x.pl&&x.pl.get(CAT)?x.pl.get(CAT).qty:x.qty;
 const pass=(x,q=qOf(x))=>FILTER==='in'?q>0:FILTER==='out'?!(q>0):FILTER==='docs'?docsFor(x).length>0:true;
 const DL={photo:'Photo',drawing:'Drawing',datasheet:'Datasheet',manual:'Manual',other:'Document'};
-const rank=k=>k==='Blocked / Inactive'?2:k==='Other'?1:0;
+const rank=k=>k==='Blocked'?2:(k==='Other'||k==='All items')?1:0;
 const num=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?0:n};
 const qfmt=n=>n.toLocaleString(undefined,{maximumFractionDigits:3});
 function setDB(d){
@@ -226,9 +227,9 @@ function setDB(d){
     x.c=x.code.toLowerCase();x.h=(x.code+' '+x.code.replace(/\s+/g,'')+' '+x.desc+' '+x.extra+' '+x.spec).toLowerCase();
     x.b=x.rows.map(i=>(m.loc>=0?d.rows[i][m.loc]||'':'')+' '+(gi>=0?d.rows[i][gi]||'':'')).join(' ').toLowerCase();
     x.blk=/blocked/i.test(x.desc);x.s=0;x.pl=new Map();
-    x.rows.forEach(i=>{const r=d.rows[i],p=PI>=0?(LINES[(r[PI]||'').trim()]||'Other'):'';let o=x.pl.get(p);if(!o){o={rows:[],qty:0};x.pl.set(p,o)}o.rows.push(i);o.qty+=m.qty>=0?num(r[m.qty]):0});
+    x.rows.forEach(i=>{const r=d.rows[i],p=x.blk?'Blocked':(PI>=0?(LINES[(r[PI]||'').trim()]||'Other'):'All items');let o=x.pl.get(p);if(!o){o={rows:[],qty:0};x.pl.set(p,o)}o.rows.push(i);o.qty+=m.qty>=0?num(r[m.qty]):0});
     return x});
-  HASCAT=PI>=0;
+  HASCAT=PI>=0||IDX.some(x=>x.blk);
   const when=new Date(d.ts).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
   $('#statTxt').textContent='Works offline · '+IDX.length.toLocaleString()+' materials · updated '+when;
   const st=$('#stale');st.hidden=Date.now()-d.ts<7*864e5;st.textContent='Stock shown as of '+when+'. Check SAP for current figures.';
@@ -311,10 +312,11 @@ function chrome(){
 }
 function renderCats(){
   chrome();const c=new Map();
+  for(const k of PI>=0?['Line 1','Line 2','Line 3','Blocked']:['Blocked'])c.set(k,{n:0,i:0});
   for(const x of IDX){for(const [p,o] of x.pl){if(!pass(x,o.qty))continue;let e=c.get(p);if(!e){e={n:0,i:0};c.set(p,e)}e.n++;if(o.qty>0)e.i++}}
-  const list=[...c].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),undefined,{numeric:true}));
-  $('#count').textContent='Choose a line, or search all materials above';
-  $('#list').innerHTML=list.length?'<div class="tiles">'+list.map(([k,o])=>'<button class="tile'+(rank(k)===2?' dim':'')+'" data-cat="'+esc(k)+'"><b>'+esc(plabel(k))+'</b><span class="tn">'+o.n.toLocaleString()+'</span><small>'+o.i.toLocaleString()+' in stock</small></button>').join('')+'</div>':'<div class="empty"><h2>Nothing here</h2>No materials match this filter.</div>';
+  const list=[...c].sort((a,b)=>rank(a[0])-rank(b[0])||String(a[0]).localeCompare(String(b[0]),undefined,{numeric:true}));
+  $('#count').textContent='Choose a category, or search all materials above';
+  $('#list').innerHTML=list.length?'<div class="tiles">'+list.map(([k,o])=>'<button class="tile'+(rank(k)===2?' dim':'')+(o.n?'':' none')+'" data-cat="'+esc(k)+'"><b>'+esc(plabel(k))+'</b><span class="tn">'+o.n.toLocaleString()+'</span><small>'+o.i.toLocaleString()+' in stock</small></button>').join('')+'</div>':'<div class="empty"><h2>Nothing here</h2>No materials match this filter.</div>';
 }
 function render(t){
   chrome();
@@ -326,9 +328,9 @@ function render(t){
   }
   const base=CAT!==null?IDX.reduce((a,x)=>a+(x.pl.has(CAT)?1:0),0):IDX.length;
   const outBtn='';
-  cnt.textContent=CAT!==null&&t.length?FIRSTOUT.toLocaleString()+' in '+plabel(CAT)+', '+OUT.toLocaleString()+' in other lines':(t.length||FILTER!=='all')?results.length.toLocaleString()+' of '+base.toLocaleString()+' materials':base.toLocaleString()+' materials';
+  cnt.textContent=CAT!==null&&t.length?FIRSTOUT.toLocaleString()+' in '+plabel(CAT)+', '+OUT.toLocaleString()+' in other categories':(t.length||FILTER!=='all')?results.length.toLocaleString()+' of '+base.toLocaleString()+' materials':base.toLocaleString()+' materials';
   if(!results.length){ul.innerHTML='<div class="empty"><h2>No match</h2>Try fewer words, part of the code, or a different filter.</div>'+outBtn;return}
-  ul.innerHTML=results.slice(0,shown).map((x,i)=>(OUT>0&&i===FIRSTOUT?'<div class="divider">'+(FIRSTOUT?'More from other lines':'Nothing in '+plabel(CAT)+'. From other lines:')+'</div>':'')+card(x,t)).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'')+outBtn;
+  ul.innerHTML=results.slice(0,shown).map((x,i)=>(OUT>0&&i===FIRSTOUT?'<div class="divider">'+(FIRSTOUT?'More from other categories':'Nothing in '+plabel(CAT)+'. From other categories:')+'</div>':'')+card(x,t)).join('')+(results.length>shown?'<button class="btn more" id="more">Show more</button>':'')+outBtn;
   const mb=$('#more');if(mb)mb.onclick=()=>{shown+=40;render(t)};
 }
 async function copy(t,msg){
