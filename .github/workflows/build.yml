@@ -3,6 +3,9 @@ on:
   push:
     paths: ['*.csv', '*.CSV', '*.xlsx', '*.XLSX', 'docs/**', 'extra/**', 'secure/**']
   workflow_dispatch:
+concurrency:
+  group: build
+  cancel-in-progress: false
 permissions:
   contents: write
   pages: write
@@ -12,6 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
