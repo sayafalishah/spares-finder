@@ -1,7 +1,7 @@
 name: Build data.json
 on:
   push:
-    paths: ['*.csv', '*.CSV', '*.xlsx', '*.XLSX', 'docs/**', 'extra/**']
+    paths: ['*.csv', '*.CSV', '*.xlsx', '*.XLSX', 'docs/**', 'extra/**', 'secure/**']
   workflow_dispatch:
 permissions:
   contents: write
@@ -22,7 +22,7 @@ jobs:
         run: |
           git config user.name "spares-bot"
           git config user.email "spares-bot@users.noreply.github.com"
-          git add data.json docs.json
+          git add data.json docs.json secure.json
           git add --all -- 'data-*.json' || true
           if [ -d docs ]; then git add docs; fi
           git commit -m "Update data from SAP export and documents" || echo "no change"
