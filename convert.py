@@ -9,6 +9,12 @@ from urllib.parse import quote
 
 DROP = []  # columns to leave out of the app, e.g. ['Rate', 'Last PO No']
 
+# Columns that only managers may see. They are never published in the open data files.
+# Use admin.html to lock them with a password; the build only publishes the locked (encrypted) copy.
+SECRET_PATTERNS = [r'^rate\b', r'^last\s+(pr|po|gr)\b', r'price|value|amount|cost']
+def is_secret(h):
+    return any(re.search(p, h, re.I) for p in SECRET_PATTERNS)
+
 # id, title, material code prefixes, file-name hints, output file
 INVENTORIES = [
     ('instrument', 'Instrument Inventory', ['CC_INST_'], ['instrument'], 'data.json'),
@@ -76,6 +82,9 @@ for path in files:
         continue
     hi = next((i for i, r in enumerate(table[:15]) if any(re.search(r'material', c, re.I) for c in r)), 0)
     headers = [h.strip() for h in table[hi]]
+    leaked = [h for h in headers if h and is_secret(h)]
+    if leaked:
+        print('WARNING:', path, 'still has manager-only columns', leaked, '- they were left out of the app. Remove them from the public file with admin.html.')
     ci = find(headers, *CODE_PATTERNS)
     if ci < 0:
         print('SKIPPED', path, '- no Material Code column. Columns are:', ', '.join(headers))
@@ -137,7 +146,7 @@ for inv_id, title, _prefixes, _hints, out_file in INVENTORIES:
     hs = []
     for headers, _rs, _n in parts:
         for h in headers:
-            if h and h not in hs and h not in DROP:
+            if h and h not in hs and h not in DROP and not is_secret(h):
                 hs.append(h)
     rows = []
     for headers, rs, _n in parts:
@@ -243,3 +252,14 @@ v = hashlib.sha1(json.dumps(docs, sort_keys=True).encode()).hexdigest()[:12]
 with open('docs.json', 'w', encoding='utf-8') as f:
     json.dump({'v': v, 'files': docs}, f, separators=(',', ':'))
 print('Wrote docs.json:', sum(len(x) for x in docs.values()), 'documents for', len(docs), 'codes')
+
+# ---- manager-only data: encrypted files in secure/ (made with admin.html) are listed for the app ----
+sec_files = []
+if os.path.isdir('secure'):
+    for fn in sorted(os.listdir('secure')):
+        if fn.lower().endswith('.enc'):
+            ver = hashlib.sha1(open(os.path.join('secure', fn), 'rb').read()).hexdigest()[:8]
+            sec_files.append('secure/' + quote(fn) + '?v=' + ver)
+with open('secure.json', 'w', encoding='utf-8') as f:
+    json.dump({'v': hashlib.sha1(json.dumps(sec_files).encode()).hexdigest()[:12], 'files': sec_files}, f, separators=(',', ':'))
+print('Wrote secure.json:', len(sec_files), 'manager file(s)')

@@ -15,7 +15,7 @@ self.addEventListener('activate',e=>{
 const keep=(req,r)=>{if(r.status===200){const c2=r.clone();caches.open(C).then(c=>c.put(req,c2)).catch(()=>{})}return r};
 self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
-  if(e.request.method!=='GET'||u.origin!==location.origin||/\/(data(-\w+)?|docs)\.json$/.test(u.pathname))return;
+  if(e.request.method!=='GET'||u.origin!==location.origin||/\/(data(-\w+)?|docs|secure)\.json$/.test(u.pathname)||u.pathname.includes('/secure/'))return;
   if(u.pathname.includes('/docs/')){
     e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>keep(e.request,r))));
     return;

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Spares Finder - Admin</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#E3E7E9;--card:#F8F9F9;--ink:#14222B;--mute:#566670;--line:#C5CDD2;--tag:#FFC20E;--bad:#B3261E;--ok:#1B6B47;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#10171B;--card:#1A2429;--ink:#E7ECEF;--mute:#8FA0AA;--line:#2C3A42;--bad:#FF8A80;--ok:#66D19E}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,"Roboto",sans-serif;padding:16px;max-width:640px;margin:auto}
+h1{font-size:22px;margin:6px 0}p{color:var(--mute);margin:6px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+input[type=password],input[type=text],input[type=file]{width:100%;font:inherit;padding:10px;border:2px solid var(--ink);border-radius:8px;background:var(--bg);color:var(--ink);margin:6px 0}
+label.c{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+button,a.btn{display:inline-block;font:inherit;font-weight:700;padding:12px 18px;border-radius:9px;border:0;background:var(--tag);color:#14222B;text-decoration:none;margin:6px 8px 0 0;cursor:pointer}
+button.alt{background:transparent;border:2px solid var(--ink);color:var(--ink)}
+button:disabled{opacity:.4}.err{color:var(--bad)}.ok{color:var(--ok)}details summary{cursor:pointer;color:var(--mute)}
+</style>
+</head>
+<body>
+<h1>Update an inventory</h1>
+<div class="card" id="setCard" hidden><b>One-time setup</b>
+<p>Your GitHub name, the repository name, and a token that lets this page upload files. The token stays on this device only.</p>
+<input id="gOwner" type="text" placeholder="GitHub username" autocapitalize="off"><input id="gRepo" type="text" placeholder="Repository name" autocapitalize="off"><input id="gTok" type="password" placeholder="GitHub token" autocomplete="off">
+<button id="saveSet">Save</button></div>
+<div class="card"><b>1. Choose the SAP Excel file</b><input id="file" type="file" accept=".xlsx,.xls,.csv"><div id="info"></div>
+<details id="colsBox" hidden><summary>Locked columns (change only if needed)</summary><div id="cols"></div></details></div>
+<div class="card"><b>2. Manager password</b>
+<input id="pw1" type="password" placeholder="Manager password" autocomplete="off">
+<label class="c"><input type="checkbox" id="rem"> Remember it on this device</label>
+<button id="go" disabled>Prepare and upload</button>
+<p id="msg"></p><div id="out"></div></div>
+<p><a href="#" id="chg">Change GitHub settings</a></p>
+<script>
+//<core>
+
+const SALT_HEX='3de1ffb8952ea703668da8adb002ac88',ITER=300000;
+const hex2=s=>Uint8Array.from(s.match(/../g).map(h=>parseInt(h,16)));
+const b64d=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const b64e=u=>{let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)};
+async function deriveKey(pw,usages){const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt:hex2(SALT_HEX),iterations:ITER,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,usages)}
+async function encJSON(key,obj){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(obj))));return{v:1,n:b64e(iv),c:b64e(ct)}}
+async function decJSON(key,blob){const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(blob.n)},key,b64d(blob.c));return JSON.parse(new TextDecoder().decode(pt))}
+
+const SECRET=[/^rate\b/i,/^last\s+(pr|po|gr)\b/i,/price|value|amount|cost/i];
+const normCode=c=>String(c||'').replace(/\s+/g,'').toUpperCase();
+function findHeaderRow(aoa){const i=aoa.slice(0,15).findIndex(r=>r.some(c=>/material/i.test(c)));return i<0?0:i}
+function prepare(aoa,hi,secIdx){
+  const hdr=aoa[hi].map(x=>String(x).trim());
+  const ci=hdr.findIndex(h=>/^material\s*code$/i.test(h))>=0?hdr.findIndex(h=>/^material\s*code$/i.test(h)):hdr.findIndex(h=>/material.*(code|no)/i.test(h));
+  const pi=hdr.findIndex(h=>/^plant$/i.test(h)),si=hdr.findIndex(h=>/storage/i.test(h));
+  if(ci<0)throw new Error('No Material Code column found.');
+  if(secIdx.includes(ci))throw new Error('The Material Code column cannot be locked.');
+  const rows=aoa.slice(hi+1).filter(r=>r.some(c=>String(c).trim()!==''));
+  const pubIdx=hdr.map((_,i)=>i).filter(i=>!secIdx.includes(i));
+  const pubAOA=[pubIdx.map(i=>hdr[i])].concat(rows.map(r=>pubIdx.map(i=>String(r[i]==null?'':r[i]).trim())));
+  const sec={h:secIdx.map(i=>hdr[i]),r:rows.map(r=>[normCode(r[ci])+'|'+(pi>=0?String(r[pi]||'').trim():'')+'|'+(si>=0?String(r[si]||'').trim():''),secIdx.map(i=>String(r[i]==null?'':r[i]).trim())])};
+  return{pubAOA,sec};
+}
+
+//</core>
+//<gh>
+const GH={o:'',r:'',t:''};
+async function gh(method,path,body){
+  const x=await fetch('https://api.github.com/repos/'+GH.o+'/'+GH.r+path,{method,cache:'no-store',headers:{Authorization:'Bearer '+GH.t,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  if(x.status===404&&method==='GET')return null;
+  if(!x.ok){let m='';try{m=(await x.json()).message}catch(e){}throw new Error('GitHub refused ('+x.status+'): '+m+(x.status===401||x.status===403||x.status===404?' Check the token, username and repository name.':''))}
+  return x.status===204?{}:x.json();
+}
+async function putFile(path,bytes,msg){
+  const cur=await gh('GET','/contents/'+encodeURI(path));
+  return gh('PUT','/contents/'+encodeURI(path),Object.assign({message:msg,content:b64e(bytes)},cur&&cur.sha?{sha:cur.sha}:{}));
+}
+async function removeOtherCase(name){
+  const list=await gh('GET','/contents/');if(!Array.isArray(list))return;
+  for(const f of list)if(f.type==='file'&&f.name!==name&&f.name.toLowerCase()===name.toLowerCase())await gh('DELETE','/contents/'+encodeURI(f.name),{message:'Remove old '+f.name,sha:f.sha});
+}
+//</gh>
+let AOA=null,HI=0,HDR=[],BASE='';
+const $=s=>document.querySelector(s);
+const LS=k=>{try{return localStorage.getItem(k)}catch(e){return null}},SS=(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}};
+function loadSettings(){
+  try{const s=JSON.parse(LS('spadmin')||'null');if(s){GH.o=s.o;GH.r=s.r;GH.t=s.t}}catch(e){}
+  $('#gOwner').value=GH.o||'sayafalishah';$('#gRepo').value=GH.r||'spares-finder';
+  $('#setCard').hidden=!!(GH.o&&GH.r&&GH.t);
+  const p=LS('sppw');if(p){$('#pw1').value=p;$('#rem').checked=true}
+  check();
+}
+function check(){$('#go').disabled=!(AOA&&GH.t)}
+$('#saveSet').onclick=()=>{GH.o=$('#gOwner').value.trim();GH.r=$('#gRepo').value.trim();GH.t=$('#gTok').value.trim();if(!(GH.o&&GH.r&&GH.t))return;SS('spadmin',JSON.stringify(GH));$('#gTok').value='';$('#setCard').hidden=true;check()};
+$('#chg').onclick=e=>{e.preventDefault();$('#setCard').hidden=false};
+$('#file').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+    AOA=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:''});
+    HI=findHeaderRow(AOA);HDR=AOA[HI].map(x=>String(x).trim());BASE=f.name.replace(/\.[^.]+$/,'');
+    const hit=HDR.filter(h=>SECRET.some(rx=>rx.test(h)));
+    $('#info').innerHTML='<p class="ok">'+(AOA.length-HI-1).toLocaleString()+' rows. Locked for managers: '+(hit.join(', ')||'none found')+'.</p>';
+    $('#cols').innerHTML=HDR.map((h,i)=>'<label class="c"><input type="checkbox" data-i="'+i+'"'+(SECRET.some(rx=>rx.test(h))?' checked':'')+'> '+(h||'(blank)')+'</label>').join('');
+    $('#colsBox').hidden=false;$('#out').innerHTML='';$('#msg').textContent='';check();
+  }catch(err){AOA=null;$('#info').innerHTML='<p class="err">Could not read that file: '+err.message+'</p>';check()}
+};
+$('#go').onclick=async()=>{
+  const m=$('#msg');m.className='';m.textContent='';$('#out').innerHTML='';
+  const pw=$('#pw1').value;
+  if(pw.length<12){m.className='err';m.textContent='The password must be at least 12 characters.';return}
+  const sel=[...document.querySelectorAll('#cols input:checked')].map(x=>+x.dataset.i);
+  if(!sel.length){m.className='err';m.textContent='No column is ticked to lock. Open "Locked columns" and tick them.';return}
+  $('#go').disabled=true;
+  try{
+    m.textContent='Locking the manager fields…';
+    const {pubAOA,sec}=prepare(AOA,HI,sel);
+    const blob=await encJSON(await deriveKey(pw,['encrypt']),sec);
+    const wb2=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb2,XLSX.utils.aoa_to_sheet(pubAOA),'Sheet1');
+    const xlBytes=new Uint8Array(XLSX.write(wb2,{bookType:'xlsx',type:'array'}));
+    const enBytes=new TextEncoder().encode(JSON.stringify(blob));
+    SS('sppw',$('#rem').checked?pw:null);
+    m.textContent='Uploading…';
+    await putFile('secure/'+BASE+'.enc',enBytes,'Update manager file '+BASE);
+    await putFile(BASE+'.xlsx',xlBytes,'Update '+BASE);
+    await removeOtherCase(BASE+'.xlsx');
+    m.className='ok';m.textContent='Done. The apps update by themselves in about 2 minutes.';
+    $('#out').innerHTML='<a class="btn" href="https://github.com/'+GH.o+'/'+GH.r+'/actions" target="_blank">See the build</a>';
+    const dl=(b,n,t)=>{const a=document.createElement('a');a.className='btn alt';a.href=URL.createObjectURL(new Blob([b],{type:t}));a.download=n;a.textContent='Save a copy: '+n;return a};
+  }catch(err){m.className='err';m.textContent=err.message}
+  $('#go').disabled=false;
+};
+loadSettings();
+</script>
+</body></html>
